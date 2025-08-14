@@ -1,0 +1,44 @@
+{
+  "name": "food-and-beer-shop",
+  "version": "1.0.0",
+  "description": "Food and Beer e-commerce site with PayPay integration",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "seed": "node scripts/seed-database.js",
+    "setup-db": "node scripts/setup-supabase.js",
+    "insert-beers": "node scripts/insert-beer-products.js",
+    "test-payments": "node scripts/test-payment-system.js"
+  },
+  "dependencies": {
+    "@paypayopa/paypayopa-sdk-node": "^2.1.0",
+    "@stripe/react-stripe-js": "^3.9.0",
+    "@stripe/stripe-js": "^7.8.0",
+    "@supabase/supabase-js": "^2.55.0",
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.16",
+    "autoprefixer": "^10.4.21",
+    "axios": "^1.6.0",
+    "dotenv": "^17.2.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.1",
+    "micro": "^10.0.1",
+    "next": "^14.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-hot-toast": "^2.5.2",
+    "stripe": "^18.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-next": "^14.0.0",
+    "typescript": "^5.0.0"
+  }
+}
