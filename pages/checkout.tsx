@@ -18,6 +18,7 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
     const router = useRouter();
     const [selectedPayment, setSelectedPayment] = useState<string>('credit');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [customerEmail, setCustomerEmail] = useState<string>('');
     const { toast, showSuccess, showError, hideToast } = useToast();
 
     const [payPayQRCode, setPayPayQRCode] = useState<string | null>(null);
@@ -37,7 +38,7 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
                 body: JSON.stringify({
                     productId: product.id,
                     quantity,
-                    customerEmail: '', // Can be added later if needed
+                    customerEmail: customerEmail || 'paypay@example.com', // Optional for PayPay
                 }),
             });
 
@@ -150,20 +151,26 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
                             </div>
                             <div className="card-body p-3 p-md-4">
                                 {/* Order Summary */}
-                                <div className="order-summary mb-4 p-3 bg-light rounded">
-                                    <h5 className="mb-3 fs-6 fs-md-5">Order Summary</h5>
+                                <div
+                                    className="order-summary mb-4 p-3 rounded"
+                                    style={{
+                                        backgroundColor: '#fffbe6', // very light yellow, easy on the eyes
+                                        border: '1px solid #ffe066'
+                                    }}
+                                >
+                                    <h5 className="mb-3 fs-6 fs-md-5" style={{ color: '#b8860b' }}>Order Summary</h5>
                                     <div className="d-flex justify-content-between mb-2">
-                                        <span className="text-break">{product.name}</span>
-                                        <span className="ms-2 text-nowrap">¥{product.price.toLocaleString()}</span>
+                                        <span className="text-break" style={{ color: '#333' }}>{product.name}</span>
+                                        <span className="ms-2 text-nowrap" style={{ color: '#b8860b' }}>¥{product.price.toLocaleString()}</span>
                                     </div>
                                     <div className="d-flex justify-content-between mb-2">
-                                        <span>Quantity</span>
-                                        <span>{quantity}</span>
+                                        <span style={{ color: '#555' }}>Quantity</span>
+                                        <span style={{ color: '#555' }}>{quantity}</span>
                                     </div>
-                                    <hr className="my-2" />
+                                    <hr className="my-2" style={{ borderColor: '#ffe066' }} />
                                     <div className="d-flex justify-content-between fw-bold fs-6 fs-md-5">
-                                        <span>Total</span>
-                                        <span className="text-warning">¥{totalAmount.toLocaleString()}</span>
+                                        <span style={{ color: '#b8860b' }}>Total</span>
+                                        <span className="text-warning" style={{ color: '#ff9800' }}>¥{totalAmount.toLocaleString()}</span>
                                     </div>
                                 </div>
 
@@ -236,6 +243,28 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
                                     </div>
                                 </div>
 
+                                {/* Customer Email Input */}
+                                <div className="mb-4">
+                                    <label htmlFor="customerEmail" className="form-label fw-bold">
+                                        📧 Email Address <span className="text-danger">*</span> <small className="text-muted">(Required for Cash on Delivery)</small>
+                                    </label>
+                                    <input
+                                        type="email"
+                                        className="form-control"
+                                        id="customerEmail"
+                                        placeholder="Enter your email address"
+                                        value={customerEmail}
+                                        onChange={(e) => setCustomerEmail(e.target.value)}
+                                        required={selectedPayment === 'cod'}
+                                    />
+                                    <small className="text-muted">
+                                        {selectedPayment === 'cod'
+                                            ? 'We\'ll send order confirmation to this email'
+                                            : 'Optional for PayPay and Credit Card payments'
+                                        }
+                                    </small>
+                                </div>
+
                                 {/* Credit Card Form with Stripe */}
                                 {selectedPayment === 'credit' && (
                                     <div className="payment-form">
@@ -276,10 +305,17 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <PayPayLogo width={80} height={32} className="me-2 d-none d-sm-inline" />
-                                                            <PayPayLogo width={60} height={24} className="me-2 d-sm-none" />
+                                                            <img
+                                                                src="/images/paypay.png"
+                                                                alt="PayPay"
+                                                                width={80}
+                                                                height={40}
+                                                                className="me-2 d-none d-sm-inline rounded"
+                                                                style={{ objectFit: 'contain' }}
+                                                            />
+
                                                             <span className="d-none d-sm-inline">Generate QR Code - ¥{totalAmount.toLocaleString()}</span>
-                                                            <span className="d-sm-none">Generate QR - ¥{totalAmount.toLocaleString()}</span>
+                                                            <span className="d-sm-none text-white">Generate QR - ¥{totalAmount.toLocaleString()}</span>
                                                         </>
                                                     )}
                                                 </button>
@@ -456,12 +492,104 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
                                 {/* Cash on Delivery */}
                                 {selectedPayment === 'cod' && (
                                     <div className="text-center">
-                                        <div className="alert alert-info">
-                                            <h6 className="fs-6">💰 Cash on Delivery</h6>
-                                            <p className="mb-0">Pay ¥{totalAmount.toLocaleString()} when your order is delivered.</p>
-                                            <small>Delivery fee: ¥300 (Free for orders over ¥2,000)</small>
+                                        <div className="alert alert-info mb-4">
+                                            <h6 className="fs-6 mb-3">💰 Cash on Delivery</h6>
+                                            <p className="mb-2">Pay ¥{totalAmount.toLocaleString()} when your order is delivered.</p>
+                                            <small className="text-muted">Delivery fee: ¥300 (Free for orders over ¥2,000)</small>
                                         </div>
-                                        <button className="btn btn-success btn-lg w-100 fw-bold py-3">
+
+                                        {/* Delivery Information */}
+                                        <div className="delivery-info mb-4 p-3 rounded" style={{ backgroundColor: '#f8f9fa', border: '1px solid #dee2e6' }}>
+                                            <h6 className="mb-3" style={{ color: '#495057' }}>📦 Delivery Details</h6>
+                                            <div className="row text-start">
+                                                <div className="col-md-6 mb-2">
+                                                    <div className="d-flex align-items-center mb-2">
+                                                        <i className="fas fa-clock me-2" style={{ color: '#28a745' }}></i>
+                                                        <span style={{ fontSize: '14px' }}>Delivery Time: 2-3 business days</span>
+                                                    </div>
+                                                    <div className="d-flex align-items-center mb-2">
+                                                        <i className="fas fa-map-marker-alt me-2" style={{ color: '#dc3545' }}></i>
+                                                        <span style={{ fontSize: '14px' }}>Delivery Area: Tokyo, Osaka, Kyoto</span>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-6 mb-2">
+                                                    <div className="d-flex align-items-center mb-2">
+                                                        <i className="fas fa-credit-card me-2" style={{ color: '#ffc107' }}></i>
+                                                        <span style={{ fontSize: '14px' }}>Payment: Cash only</span>
+                                                    </div>
+                                                    <div className="d-flex align-items-center mb-2">
+                                                        <i className="fas fa-shield-alt me-2" style={{ color: '#17a2b8' }}></i>
+                                                        <span style={{ fontSize: '14px' }}>Order Protection: 100% Secure</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Important Notes */}
+                                        <div className="important-notes mb-4 p-3 rounded" style={{ backgroundColor: '#f8d7da', border: '1px solid #f5c6cb' }}>
+                                            <h6 className="mb-3" style={{ color: '#721c24' }}>⚠️ Important Information</h6>
+                                            <ul className="text-start mb-0" style={{ fontSize: '14px', color: '#721c24' }}>
+                                                <li>Please have exact change ready for delivery</li>
+                                                <li>Orders are processed within 24 hours</li>
+                                                <li>Delivery attempts: 2 times maximum</li>
+                                                <li>Contact us if you need to reschedule</li>
+                                                <li>Returns accepted within 7 days</li>
+                                            </ul>
+                                        </div>
+
+                                        <button
+                                            className="cod-button"
+                                            style={{
+                                                backgroundColor: '#dc3545',
+                                                color: '#ffffff',
+                                                borderColor: '#dc3545',
+                                                border: '2px solid #dc3545',
+                                                borderRadius: '8px',
+                                                padding: '12px 24px',
+                                                fontSize: '18px',
+                                                fontWeight: 'bold',
+                                                width: '100%',
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={async () => {
+                                                try {
+                                                    if (!customerEmail) {
+                                                        showError('Please enter your email address');
+                                                        return;
+                                                    }
+
+                                                    showSuccess('Creating Cash on Delivery order...');
+
+                                                    // Create order in database
+                                                    const response = await fetch('/api/create-payment', {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                        body: JSON.stringify({
+                                                            productId: product.id,
+                                                            quantity: quantity,
+                                                            customerEmail: customerEmail,
+                                                            paymentMethod: 'cod'
+                                                        }),
+                                                    });
+
+                                                    const data = await response.json();
+
+                                                    if (response.ok && data.orderId) {
+                                                        showSuccess('Cash on Delivery order created! Redirecting...');
+                                                        setTimeout(() => {
+                                                            router.push(`/payment/success?orderId=${data.orderId}&method=cod`);
+                                                        }, 1500);
+                                                    } else {
+                                                        showError(data.error || 'Failed to create order');
+                                                    }
+                                                } catch (error: any) {
+                                                    console.error('Error creating COD order:', error);
+                                                    showError('Failed to create order. Please try again.');
+                                                }
+                                            }}
+                                        >
                                             📦 Place COD Order
                                         </button>
                                     </div>
@@ -477,6 +605,8 @@ export default function CheckoutPage({ product, quantity, totalAmount }: Checkou
                     </div>
                 </div>
             </div>
+
+            {/* Toast Notification - Positioned at bottom */}
             <Toast
                 message={toast.message}
                 type={toast.type}

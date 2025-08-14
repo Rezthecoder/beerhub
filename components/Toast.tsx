@@ -53,7 +53,7 @@ export default function Toast({ message, type, show, onClose, duration = 5000 }:
 
     return (
         <div
-            className="position-fixed top-0 end-0 p-3"
+            className="position-fixed bottom-0 end-0 p-3"
             style={{ zIndex: 1050 }}
         >
             <div className={`toast show ${getToastClass()}`} role="alert">

@@ -1573,3 +1573,134 @@ small {
 .navbar-nav .nav-link:nth-child(4) {
   animation-delay: 0.4s;
 }
+
+/* Cash on Delivery Button Styling - Ultra Aggressive Override */
+.cod-button,
+button.cod-button,
+input[type="button"].cod-button,
+input[type="submit"].cod-button,
+.cod-button.btn,
+.cod-button.btn-primary,
+.cod-button.btn-secondary,
+.cod-button.btn-success,
+.cod-button.btn-danger,
+.cod-button.btn-warning,
+.cod-button.btn-info,
+.cod-button.btn-light,
+.cod-button.btn-dark {
+  background-color: #dc3545 !important;
+  color: #ffffff !important;
+  border-color: #dc3545 !important;
+  background-image: none !important;
+  background: #dc3545 !important;
+  border: 2px solid #dc3545 !important;
+  border-radius: 8px !important;
+  padding: 12px 24px !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  width: 100% !important;
+  cursor: pointer !important;
+}
+
+.cod-button:hover,
+button.cod-button:hover,
+input[type="button"].cod-button:hover,
+input[type="submit"].cod-button:hover,
+.cod-button.btn:hover,
+.cod-button.btn-primary:hover,
+.cod-button.btn-secondary:hover,
+.cod-button.btn-success:hover,
+.cod-button.btn-danger:hover,
+.cod-button.btn-warning:hover,
+.cod-button.btn-info:hover,
+.cod-button.btn-light:hover,
+.cod-button.btn-dark:hover {
+  background-color: #c82333 !important;
+  color: #ffffff !important;
+  border-color: #bd2130 !important;
+  background-image: none !important;
+  background: #c82333 !important;
+  border: 2px solid #bd2130 !important;
+}
+
+.cod-button:focus,
+button.cod-button:focus,
+input[type="button"].cod-button:focus,
+input[type="submit"].cod-button:focus,
+.cod-button.btn:focus,
+.cod-button.btn-primary:focus,
+.cod-button.btn-secondary:focus,
+.cod-button.btn-success:focus,
+.cod-button.btn-danger:focus,
+.cod-button.btn-warning:focus,
+.cod-button.btn-info:focus,
+.cod-button.btn-light:focus,
+.cod-button.btn-dark:focus {
+  background-color: #dc3545 !important;
+  color: #ffffff !important;
+  border-color: #dc3545 !important;
+  background-image: none !important;
+  background: #dc3545 !important;
+  border: 2px solid #dc3545 !important;
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+.cod-button:active,
+button.cod-button:active,
+input[type="button"].cod-button:active,
+input[type="submit"].cod-button:active,
+.cod-button.btn:active,
+.cod-button.btn-primary:active,
+.cod-button.btn-secondary:active,
+.cod-button.btn-success:active,
+.cod-button.btn-danger:active,
+.cod-button.btn-warning:active,
+.cod-button.btn-info:active,
+.cod-button.btn-light:active,
+.cod-button.btn-dark:active {
+  background-color: #c82333 !important;
+  color: #ffffff !important;
+  border-color: #bd2130 !important;
+  background-image: none !important;
+  background: #c82333 !important;
+  border: 2px solid #bd2130 !important;
+}
+
+/* Force override any Bootstrap button classes */
+.btn.btn-lg.w-100.fw-bold.py-3.cod-button {
+  background-color: #dc3545 !important;
+  color: #ffffff !important;
+  border-color: #dc3545 !important;
+  background-image: none !important;
+  background: #dc3545 !important;
+  border: 2px solid #dc3545 !important;
+  border-radius: 8px !important;
+  padding: 12px 24px !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  width: 100% !important;
+  cursor: pointer !important;
+}
+
+/* Remove any Bootstrap button styling that might interfere */
+.cod-button.btn-primary,
+.cod-button.btn-secondary,
+.cod-button.btn-success,
+.cod-button.btn-danger,
+.cod-button.btn-warning,
+.cod-button.btn-info,
+.cod-button.btn-light,
+.cod-button.btn-dark {
+  background-color: #dc3545 !important;
+  color: #ffffff !important;
+  border-color: #dc3545 !important;
+  background-image: none !important;
+  background: #dc3545 !important;
+  border: 2px solid #dc3545 !important;
+  border-radius: 8px !important;
+  padding: 12px 24px !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  width: 100% !important;
+  cursor: pointer !important;
+}
