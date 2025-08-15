@@ -29,7 +29,7 @@ export default function Home({ products }: HomeProps) {
         color: '#FFD600'
       }}>
         <div className="container text-center">
-          <h1 className="display-2 fw-bold mb-3" style={{ color: '#FF0000', textShadow: '0 2px 8px #fffbe6' }}>Toriazu 生ビール</h1>
+          <h1 className="display-2 fw-bold mb-3" style={{ color: '#FF0000', textShadow: '0 2px 8px #fffbe6' }}>Toriaezu 生ビール</h1>
           <p className="display-6  mb-3" style={{ color: '#ffa500' }}>Save Water, Drink Beer</p>
         </div>
       </div>
