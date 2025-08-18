@@ -28,6 +28,11 @@ a {
   text-decoration: none;
 }
 
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
 /* Subtle star field effect */
 body::before {
   content: '';
@@ -119,6 +124,7 @@ small {
 body {
   padding-top: 70px;
 }
+
 
 .navbar-brand {
   font-family: 'Inter', sans-serif;
@@ -902,12 +908,13 @@ footer a:hover {
   animation: spin 1s linear infinite;
 }
 
+/* Spinner animation for checkout page */
 @keyframes spin {
-  from {
+  0% {
     transform: rotate(0deg);
   }
 
-  to {
+  100% {
     transform: rotate(360deg);
   }
 }

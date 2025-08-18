@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>BeerHub Checkout</title>
+  <meta name="description" content="Complete your beer order with secure payment" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/checkout.css" />
+  <script src="https://js.stripe.com/v3/"></script>
+  <script src="js/checkout.js" defer></script>
+</head>
+
+<body>
+  <div class="checkout-container">
+    <!-- Order Summary -->
+    <div class="order-summary">
+      <h2>🍺 BeerHub Order</h2>
+      <div class="order-details">
+        <div class="order-item">
+          <span>Premium Beer Selection</span>
+          <span>¥1,400</span>
+        </div>
+        <div class="order-total">
+          <strong>Total: ¥1,400</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Form -->
+    <form id="payment-form">
+      <div id="payment-element">
+        <!--Stripe.js injects the Payment Element-->
+      </div>
+      <button id="submit">
+        <div class="spinner hidden" id="spinner"></div>
+        <span id="button-text">Pay now</span>
+      </button>
+      <div id="payment-message" class="hidden"></div>
+    </form>
+  </div>
+</body>
+
+</html>

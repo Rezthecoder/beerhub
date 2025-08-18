@@ -1,114 +1,278 @@
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../../components/Layout';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
 
-export default function PaymentCallback() {
+interface PaymentStatus {
+    status: 'success' | 'pending' | 'failed' | 'loading';
+    message: string;
+    orderId?: string;
+    amount?: number;
+}
+
+export default function PaymentCallbackPage() {
     const router = useRouter();
-    const [status, setStatus] = useState<'processing' | 'success' | 'failed' | 'timeout'>('processing');
-    const [message, setMessage] = useState('Verifying your PayPay payment...');
-
-    // Polling function to check payment status
-    const pollPaymentStatus = async (merchantPaymentId: string) => {
-        const maxAttempts = 10; // number of polls before timeout
-        let attempt = 0;
-
-        while (attempt < maxAttempts) {
-            try {
-                const res = await fetch(`/api/get-payment-status?merchantPaymentId=${merchantPaymentId}`);
-                const data = await res.json();
-                console.log(`Attempt ${attempt + 1}:`, data);
-
-                if (data.status === 'COMPLETED') {
-                    setStatus('success');
-                    setMessage('Payment verified! Redirecting...');
-                    setTimeout(() => {
-                        router.push(`/payment/success?orderId=${router.query.orderId}`);
-                    }, 2000);
-                    return;
-                }
-
-                if (['FAILED', 'CANCELED'].includes(data.status)) {
-                    setStatus('failed');
-                    setMessage('Payment failed or canceled. Redirecting...');
-                    setTimeout(() => {
-                        router.push(`/payment/failed?orderId=${router.query.orderId}`);
-                    }, 2000);
-                    return;
-                }
-            } catch (error) {
-                console.error('Error checking payment status:', error);
-            }
-
-            attempt++;
-            await new Promise((r) => setTimeout(r, 3000)); // wait 3 seconds before retry
-        }
-
-        // Timeout after max attempts
-        setStatus('timeout');
-        setMessage('Payment verification timed out. Please check later.');
-        setTimeout(() => {
-            router.push(`/payment/failed?orderId=${router.query.orderId}&reason=timeout`);
-        }, 3000);
-    };
+    const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>({
+        status: 'loading',
+        message: 'Processing your payment...'
+    });
 
     useEffect(() => {
-        if (router.query.merchantPaymentId) {
-            pollPaymentStatus(router.query.merchantPaymentId as string);
+        if (router.isReady) {
+            const { orderId, status, amount, merchantPaymentId } = router.query;
+
+            console.log('Payment callback received:', { orderId, status, amount, merchantPaymentId });
+            console.log('Router query full:', router.query);
+
+            // Real payment verification with PayPay API
+            const verifyPayment = async () => {
+                try {
+                    console.log('Starting payment verification...');
+
+                    if (!merchantPaymentId) {
+                        console.log('No merchantPaymentId found in query');
+                        setPaymentStatus({
+                            status: 'failed',
+                            message: 'Missing payment ID. Please contact support.',
+                            orderId: orderId as string
+                        });
+                        return;
+                    }
+
+                    console.log('Calling verify-paypay-payment API with:', { merchantPaymentId, orderId });
+
+                    // Call PayPay API to verify payment status
+                    const response = await fetch('/api/verify-paypay-payment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            merchantPaymentId: merchantPaymentId,
+                            orderId: orderId
+                        })
+                    });
+
+                    console.log('API response status:', response.status);
+                    console.log('API response ok:', response.ok);
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('API response error:', errorText);
+                        throw new Error(`Failed to verify payment: ${response.status} ${errorText}`);
+                    }
+
+                    const paymentData = await response.json();
+                    console.log('Payment verification result:', paymentData);
+
+                    if (paymentData.status === 'COMPLETED') {
+                        console.log('Payment completed successfully');
+                        setPaymentStatus({
+                            status: 'success',
+                            message: 'Payment completed successfully!',
+                            orderId: orderId as string,
+                            amount: amount ? parseInt(amount as string) : paymentData.amount
+                        });
+                    } else if (paymentData.status === 'FAILED' || paymentData.status === 'CANCELED') {
+                        console.log('Payment failed or canceled:', paymentData.status);
+                        setPaymentStatus({
+                            status: 'failed',
+                            message: `Payment ${paymentData.status.toLowerCase()}. Please try again.`,
+                            orderId: orderId as string
+                        });
+                    } else {
+                        console.log('Payment still pending:', paymentData.status);
+                        setPaymentStatus({
+                            status: 'pending',
+                            message: 'Payment is being processed. Please wait...',
+                            orderId: orderId as string
+                        });
+                    }
+
+                } catch (error: any) {
+                    console.error('Payment verification error:', error);
+                    setPaymentStatus({
+                        status: 'failed',
+                        message: `Payment verification failed: ${error.message}`,
+                        orderId: orderId as string
+                    });
+                }
+            };
+
+            verifyPayment();
         }
-    }, [router.query.merchantPaymentId]);
+    }, [router.isReady, router.query]);
+
+    // Responsive styles
+    const containerStyle = {
+        maxWidth: 'clamp(600px, 80vw, 900px)',
+        width: '100%',
+        margin: '0 auto',
+        padding: 'clamp(20px, 4vw, 40px)',
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '30px'
+    };
+
+    const cardStyle = {
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        padding: 'clamp(30px, 6vw, 50px)',
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+        border: '2px solid #10b981',
+        textAlign: 'center' as const,
+        width: '100%'
+    };
+
+    const iconStyle = {
+        fontSize: 'clamp(60px, 12vw, 80px)',
+        marginBottom: '20px'
+    };
+
+    const titleStyle = {
+        fontSize: 'clamp(28px, 6vw, 36px)',
+        marginBottom: '15px',
+        color: '#1a1a1a',
+        fontWeight: 'bold'
+    };
+
+    const messageStyle = {
+        fontSize: 'clamp(16px, 3vw, 18px)',
+        color: '#666',
+        marginBottom: '30px'
+    };
+
+    const detailsStyle = {
+        backgroundColor: '#f8fafc',
+        borderRadius: '12px',
+        padding: 'clamp(20px, 4vw, 30px)',
+        marginBottom: '30px',
+        width: '100%'
+    };
+
+    const buttonStyle = {
+        padding: 'clamp(12px, 3vw, 16px) 24px',
+        backgroundColor: '#10b981',
+        color: 'white',
+        border: 'none',
+        borderRadius: '8px',
+        fontSize: 'clamp(14px, 3vw, 16px)',
+        fontWeight: '600',
+        cursor: 'pointer',
+        textDecoration: 'none',
+        display: 'inline-block',
+        transition: 'all 0.2s ease'
+    };
+
+    const renderContent = () => {
+        switch (paymentStatus.status) {
+            case 'loading':
+                return (
+                    <>
+                        <div style={iconStyle}>⏳</div>
+                        <h1 style={titleStyle}>Processing Payment...</h1>
+                        <p style={messageStyle}>
+                            Please wait while we verify your payment with PayPay.
+                        </p>
+                        <div style={{ fontSize: '48px', animation: 'spin 1s linear infinite' }}>
+                            🔄
+                        </div>
+                    </>
+                );
+
+            case 'success':
+                return (
+                    <>
+                        <div style={iconStyle}>🎉</div>
+                        <h1 style={titleStyle}>Payment Successful!</h1>
+                        <p style={messageStyle}>
+                            Thank you! Your PayPay payment has been completed successfully.
+                        </p>
+
+                        <div style={detailsStyle}>
+                            <h3 style={{ marginBottom: '20px', color: '#1a1a1a' }}>
+                                📋 Payment Details
+                            </h3>
+                            {paymentStatus.orderId && (
+                                <p style={{ marginBottom: '10px' }}>
+                                    <strong>Order ID:</strong> {paymentStatus.orderId}
+                                </p>
+                            )}
+                            {paymentStatus.amount && (
+                                <p style={{ marginBottom: '10px' }}>
+                                    <strong>Amount:</strong> ¥{paymentStatus.amount.toLocaleString()}
+                                </p>
+                            )}
+                            <p style={{ marginBottom: '10px' }}>
+                                <strong>Payment Method:</strong> PayPay
+                            </p>
+                        </div>
+
+                        <div style={{ marginBottom: '30px' }}>
+                            <h4 style={{ marginBottom: '15px', color: '#1a1a1a' }}>🚚 What's Next?</h4>
+                            <p style={{ color: '#666' }}>
+                                You will receive a confirmation email shortly.
+                                Your order will be processed and shipped within 1-2 business days.
+                            </p>
+                        </div>
+                    </>
+                );
+
+            case 'failed':
+                return (
+                    <>
+                        <div style={iconStyle}>❌</div>
+                        <h1 style={titleStyle}>Payment Verification Failed</h1>
+                        <p style={messageStyle}>
+                            We couldn't verify your payment. Please contact our support team.
+                        </p>
+
+                        <div style={detailsStyle}>
+                            <h3 style={{ marginBottom: '20px', color: '#1a1a1a' }}>
+                                📋 Order Information
+                            </h3>
+                            {paymentStatus.orderId && (
+                                <p style={{ marginBottom: '10px' }}>
+                                    <strong>Order ID:</strong> {paymentStatus.orderId}
+                                </p>
+                            )}
+                            <p style={{ color: '#dc2626' }}>
+                                Please keep this order ID for reference when contacting support.
+                            </p>
+                        </div>
+                    </>
+                );
+
+            default:
+                return null;
+        }
+    };
 
     return (
-        <Layout title="Processing Payment - Food & Beer Shop">
-            <div className="container py-5">
-                <div className="row justify-content-center">
-                    <div className="col-md-6 text-center">
-                        <div className="card shadow">
-                            <div className="card-body py-5">
-                                <div className="mb-4">
-                                    {status === 'processing' && (
-                                        <div className="spinner-border text-primary" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                    {status === 'success' && (
-                                        <div className="text-success" style={{ fontSize: '4rem' }}>✓</div>
-                                    )}
-                                    {status === 'failed' && (
-                                        <div className="text-danger" style={{ fontSize: '4rem' }}>✗</div>
-                                    )}
-                                    {status === 'timeout' && (
-                                        <div className="text-warning" style={{ fontSize: '4rem' }}>⏳</div>
-                                    )}
-                                </div>
+        <div style={containerStyle}>
+            <div style={cardStyle}>
+                {renderContent()}
 
-                                <h3 className="mb-3">
-                                    {status === 'processing' && 'Processing Payment...'}
-                                    {status === 'success' && 'Payment Verified!'}
-                                    {status === 'failed' && 'Payment Failed'}
-                                    {status === 'timeout' && 'Verification Timeout'}
-                                </h3>
-                                <p className="text-muted">{message}</p>
-
-                                {status === 'failed' && (
-                                    <div className="alert alert-danger mt-3">
-                                        <small>Redirecting to error page...</small>
-                                    </div>
-                                )}
-                                {status === 'success' && (
-                                    <div className="alert alert-success mt-3">
-                                        <small>Redirecting to success page...</small>
-                                    </div>
-                                )}
-                                {status === 'timeout' && (
-                                    <div className="alert alert-warning mt-3">
-                                        <small>Please contact support if payment was deducted.</small>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                {/* Navigation */}
+                <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <Link href="/" style={buttonStyle}>
+                        🏠 Return to Home
+                    </Link>
+                    {paymentStatus.status === 'success' && (
+                        <Link href="/checkout?productId=3&quantity=1" style={{ ...buttonStyle, backgroundColor: '#3b82f6' }}>
+                            🛒 Order Again
+                        </Link>
+                    )}
                 </div>
             </div>
-        </Layout>
+
+            <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+        </div>
     );
 }

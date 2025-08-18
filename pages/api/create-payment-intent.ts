@@ -1,68 +1,54 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { stripe } from '../../lib/stripe';
-import { getProductById, createOrder } from '../../lib/products';
+
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-    try {
-        const { productId, quantity = 1, customerEmail } = req.body;
+  try {
+    const { items, amount, currency = 'JPY', productId, quantity } = req.body;
 
-        // Validate input
-        if (!productId || !quantity) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
+    // Use the provided amount or fallback to default
+    const orderAmount = amount || 1400;
 
-        // Get product details
-        const product = await getProductById(parseInt(productId));
-        if (!product) {
-            return res.status(404).json({ error: 'Product not found' });
-        }
+    console.log('Creating payment intent with data:', {
+      amount: orderAmount,
+      currency,
+      productId,
+      quantity,
+      items
+    });
 
-        const totalAmount = product.price * quantity;
+    // Create a PaymentIntent with the order amount and currency
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: orderAmount,
+      currency: currency.toLowerCase(),
+      // Add metadata for tracking
+      metadata: {
+        productId: productId?.toString() || 'unknown',
+        quantity: quantity?.toString() || '1',
+        productName: items?.[0]?.name || 'Unknown Product'
+      },
+      // In the latest version of the API, specifying the `automatic_payment_methods` parameter is optional because Stripe enables its functionality by default.
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
 
-        // Create order in database
-        const order = await createOrder({
-            product_id: product.id,
-            quantity,
-            total_amount: totalAmount,
-            customer_email: customerEmail,
-        });
+    console.log('Payment intent created successfully:', paymentIntent.id);
 
-        if (!order) {
-            return res.status(500).json({ error: 'Failed to create order' });
-        }
-
-        // Create Stripe Payment Intent
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount: totalAmount, // Amount in yen (smallest currency unit)
-            currency: 'jpy',
-            automatic_payment_methods: {
-                enabled: true,
-            },
-            metadata: {
-                orderId: order.id.toString(),
-                productId: product.id.toString(),
-                quantity: quantity.toString(),
-            },
-            description: `BeerHub Order #${order.id} - ${product.name} x ${quantity}`,
-            receipt_email: customerEmail || undefined,
-        });
-
-        res.status(200).json({
-            success: true,
-            orderId: order.id,
-            clientSecret: paymentIntent.client_secret,
-            paymentIntentId: paymentIntent.id,
-        });
-
-    } catch (error: any) {
-        console.error('Payment Intent creation error:', error);
-        res.status(500).json({
-            error: 'Internal server error',
-            message: error.message
-        });
-    }
+    // Return exactly the same format as server.js
+    res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id
+    });
+  } catch (error: any) {
+    console.error('Stripe payment intent creation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create payment intent',
+      message: error.message 
+    });
+  }
 }
