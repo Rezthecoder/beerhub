@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  * If ADMIN_PASSWORD is missing, these pages stay locked instead of opening up.
  */
 export const config = {
-  matcher: ['/admin/:path*', '/api/test-:path*', '/api/paypay-webhook-config'],
+  matcher: ['/admin/:path*', '/api/test-:path*'],
 };
 
 function unauthorized(message: string) {

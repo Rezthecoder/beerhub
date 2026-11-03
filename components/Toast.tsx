@@ -1,78 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 interface ToastProps {
-    message: string;
-    type: 'success' | 'error' | 'warning' | 'info';
-    show: boolean;
-    onClose: () => void;
-    duration?: number;
+  message: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  show: boolean;
+  onClose: () => void;
+  duration?: number;
 }
 
+const BACKGROUND: Record<ToastProps['type'], string> = {
+  success: 'bg-mint',
+  error: 'bg-coral-soft',
+  warning: 'bg-peach',
+  info: 'bg-sky',
+};
+
 export default function Toast({ message, type, show, onClose, duration = 5000 }: ToastProps) {
-    useEffect(() => {
-        if (show) {
-            const timer = setTimeout(() => {
-                onClose();
-            }, duration);
+  useEffect(() => {
+    if (!show) return;
+    const timer = setTimeout(onClose, duration);
+    return () => clearTimeout(timer);
+  }, [show, duration, onClose]);
 
-            return () => clearTimeout(timer);
-        }
-    }, [show, duration, onClose]);
+  if (!show) return null;
 
-    if (!show) return null;
-
-    const getToastClass = () => {
-        switch (type) {
-            case 'success':
-                return 'bg-success text-white';
-            case 'error':
-                return 'bg-danger text-white';
-            case 'warning':
-                return 'bg-warning text-dark';
-            case 'info':
-                return 'bg-info text-white';
-            default:
-                return 'bg-secondary text-white';
-        }
-    };
-
-    const getIcon = () => {
-        switch (type) {
-            case 'success':
-                return '✅';
-            case 'error':
-                return '❌';
-            case 'warning':
-                return '⚠️';
-            case 'info':
-                return 'ℹ️';
-            default:
-                return '📢';
-        }
-    };
-
-    return (
-        <div
-            className="position-fixed bottom-0 end-0 p-3"
-            style={{ zIndex: 1050 }}
-        >
-            <div className={`toast show ${getToastClass()}`} role="alert">
-                <div className="toast-header">
-                    <span className="me-2">{getIcon()}</span>
-                    <strong className="me-auto">
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </strong>
-                    <button
-                        type="button"
-                        className="btn-close"
-                        onClick={onClose}
-                        aria-label="Close"
-                    ></button>
-                </div>
-                <div className="toast-body">
-                    {message}
-                </div>
-            </div>
-        </div>
-    );
+  return (
+    <div className={`toast brut-sm ${BACKGROUND[type]}`} role={type === 'error' ? 'alert' : 'status'}>
+      <span>{message}</span>
+      <button type="button" onClick={onClose} aria-label="Close">
+        ×
+      </button>
+    </div>
+  );
 }

@@ -1,641 +1,236 @@
 import { GetServerSideProps } from 'next';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import Layout from '../components/Layout';
 import StripeCheckout from '../components/StripeCheckout';
+import PayPayCheckout from '../components/PayPayCheckout';
 import Toast from '../components/Toast';
-import PayPayLogo from '../components/PayPayLogo';
 import { getProductById, Product } from '../lib/products';
 import { useToast } from '../hooks/useToast';
 
 interface CheckoutPageProps {
-    product: Product;
-    quantity: number;
-    totalAmount: number;
+  product: Product;
+  quantity: number;
+  totalAmount: number;
+}
+
+type Method = 'card' | 'paypay' | 'cod';
+
+const METHODS: { id: Method; title: string; note: string }[] = [
+  { id: 'card', title: 'Card', note: 'Stripe test mode' },
+  { id: 'paypay', title: 'PayPay', note: 'PayPay sandbox' },
+  { id: 'cod', title: 'Cash on delivery', note: 'Pay when it arrives' },
+];
+
+function CashOnDelivery({ product, quantity, totalAmount }: CheckoutPageProps) {
+  const router = useRouter();
+  const [form, setForm] = useState({ name: '', phone: '', address: '', email: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.phone.trim() || !form.address.trim()) {
+      setError('Add your name, phone number and delivery address.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch('/api/create-cod-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          quantity,
+          customerName: form.name.trim(),
+          customerPhone: form.phone.trim(),
+          shippingAddress: form.address.trim(),
+          customerEmail: form.email.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.orderId) {
+        throw new Error(
+          res.status >= 500
+            ? 'Cash on delivery needs the order database, which is offline right now. Try PayPay instead.'
+            : data?.error || 'Could not place the order.'
+        );
+      }
+      router.push(`/payment/success?orderId=${data.orderId}&method=cod`);
+    } catch (err: any) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <p className="muted">Pay ¥{totalAmount.toLocaleString()} in cash when your order arrives. In this demo nothing is delivered.</p>
+      <div className="field" style={{ marginTop: '1.25rem' }}>
+        <label htmlFor="cod-name">Full name</label>
+        <input id="cod-name" className="input" autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+      </div>
+      <div className="field">
+        <label htmlFor="cod-phone">Phone number</label>
+        <input
+          id="cod-phone"
+          type="tel"
+          className="input"
+          autoComplete="tel"
+          value={form.phone}
+          onChange={(e) => setForm({ ...form, phone: e.target.value })}
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="cod-address">Delivery address</label>
+        <textarea
+          id="cod-address"
+          className="input"
+          autoComplete="street-address"
+          value={form.address}
+          onChange={(e) => setForm({ ...form, address: e.target.value })}
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="cod-email">Email (optional)</label>
+        <input
+          id="cod-email"
+          type="email"
+          className="input"
+          autoComplete="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+        />
+      </div>
+      {error && (
+        <p className="alert alert-error" role="alert" style={{ marginTop: '1rem' }}>
+          {error}
+        </p>
+      )}
+      <button type="submit" className="btn btn-lg btn-block bg-beer" style={{ marginTop: '1.5rem' }} disabled={busy}>
+        {busy ? 'Placing order…' : 'Place order'}
+      </button>
+    </form>
+  );
 }
 
 export default function CheckoutPage({ product, quantity, totalAmount }: CheckoutPageProps) {
-    const router = useRouter();
-    const [selectedPayment, setSelectedPayment] = useState<string>('credit');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [customerEmail, setCustomerEmail] = useState<string>('');
-    const { toast, showSuccess, showError, hideToast } = useToast();
+  const router = useRouter();
+  const [method, setMethod] = useState<Method>('paypay');
+  const [paypayEmail, setPaypayEmail] = useState('');
+  const { toast, showError, hideToast } = useToast();
 
-    const [payPayQRCode, setPayPayQRCode] = useState<string | null>(null);
-    const [payPayPaymentId, setPayPayPaymentId] = useState<string | null>(null);
-    const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  return (
+    <Layout title="Checkout - BeerHub">
+      <div className="container">
+        <div className="checkout-layout">
+          <section className="panel brut" aria-labelledby="pay-title">
+            <Link href={`/product/${product.id}`} className="back-link">
+              ← Back to {product.name}
+            </Link>
+            <h1 id="pay-title" className="section-title">
+              Checkout
+            </h1>
 
-    const handlePayPayPayment = async () => {
-        try {
-            setIsProcessing(true);
-            showSuccess('Creating PayPay QR Code...');
+            <fieldset style={{ border: 0, padding: 0, margin: '1.75rem 0 0' }}>
+              <legend style={{ fontWeight: 800, padding: 0 }}>How do you want to pay?</legend>
+              <div className="methods">
+                {METHODS.map((m) => (
+                  <label key={m.id} className="method">
+                    <input type="radio" name="method" value={m.id} checked={method === m.id} onChange={() => setMethod(m.id)} />
+                    {m.id === 'paypay' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src="/images/paypay.png" alt="PayPay" />
+                    ) : (
+                      <span>{m.title}</span>
+                    )}
+                    <small>{m.note}</small>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
-            const response = await fetch('/api/create-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    productId: product.id,
-                    quantity,
-                    customerEmail: customerEmail || 'paypay@example.com', // Optional for PayPay
-                }),
-            });
+            {method === 'card' && (
+              <StripeCheckout
+                productId={product.id}
+                quantity={quantity}
+                totalAmount={totalAmount}
+                onSuccess={(orderId) => router.push(`/payment/success?orderId=${orderId}&method=card`)}
+                onError={showError}
+              />
+            )}
 
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || 'PayPay payment failed');
-            }
-
-            // Show QR code instead of redirecting
-            if (result.webPaymentUrl || result.qrCodeUrl) {
-                setPayPayQRCode(result.webPaymentUrl || result.qrCodeUrl);
-                setPayPayPaymentId(result.paymentId);
-                setCurrentOrderId(result.orderId);
-                showSuccess('PayPay QR Code generated! Scan with your PayPay app.');
-
-                // Start polling for payment status
-                startPaymentStatusPolling(result.orderId, result.merchantPaymentId);
-            } else {
-                console.error('PayPay API Response:', result);
-                throw new Error(`PayPay QR code not available. ${result.message || 'Please check PayPay configuration.'}`);
-            }
-
-        } catch (error: any) {
-            console.error('PayPay payment error:', error);
-            showError(`PayPay Error: ${error.message}`);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    // Store the current polling interval to stop it when starting a new one
-    const [currentPollInterval, setCurrentPollInterval] = useState<NodeJS.Timeout | null>(null);
-
-    const startPaymentStatusPolling = (orderId: string, merchantPaymentId: string) => {
-        // PayPay Payment Status Polling Strategy:
-        // - Poll every 4.5 seconds (following PayPay's 4-5 second recommendation)
-        // - Check both database status and PayPay API for real-time updates
-        // - Stop polling after 10 minutes to prevent infinite loops
-        // - Handle network errors gracefully without stopping the poll
-        // - Update payment records with PayPay API responses for better tracking
-        // Stop any existing polling first
-        if (currentPollInterval) {
-            clearInterval(currentPollInterval);
-            console.log('🛑 Stopped previous polling instance');
-        }
-
-        console.log('🚀 Starting payment status polling for:', { orderId, merchantPaymentId });
-
-        const pollInterval = setInterval(async () => {
-            try {
-                console.log('🔄 Polling payment status for Order', orderId);
-                const response = await fetch(`/api/check-payment-status?orderId=${orderId}`);
-                const result = await response.json();
-
-                console.log('📋 Payment status check result for Order', orderId, ':', result);
-
-                if (result.status === 'completed') {
-                    clearInterval(pollInterval);
-                    console.log('🎉 Payment completed! Stopping polling and redirecting...');
-                    showSuccess('Payment completed! Redirecting...');
-                    setTimeout(() => {
-                        router.push(`/payment/success?orderId=${orderId}&method=paypay`);
-                    }, 1500);
-                } else if (result.status === 'failed') {
-                    clearInterval(pollInterval);
-                    console.log('❌ Payment failed! Stopping polling...');
-                    showError('Payment failed. Please try again.');
-                    setPayPayQRCode(null);
-                    setPayPayPaymentId(null);
-                } else if (result.status === 'error') {
-                    clearInterval(pollInterval);
-                    console.log('🚨 Payment error! Stopping polling...');
-                    showError(`Payment error: ${result.message}`);
-                    setPayPayQRCode(null);
-                    setPayPayPaymentId(null);
-                } else {
-                    console.log('⏳ Payment still pending, continuing to poll...');
-                }
-                // If status is 'pending', continue polling
-            } catch (error) {
-                console.error('Payment status check error:', error);
-                // Don't stop polling on network errors, just log them
-            }
-        }, 4500); // Check every 4.5 seconds (following PayPay's 4-5 second recommendation)
-
-        // Store the interval reference
-        setCurrentPollInterval(pollInterval);
-
-        // Stop polling after 10 minutes
-        setTimeout(() => {
-            clearInterval(pollInterval);
-            setCurrentPollInterval(null);
-            console.log('⏰ Payment status polling stopped after 10 minutes');
-        }, 600000);
-    };
-
-
-
-
-
-    return (
-        <Layout title="Checkout - BeerHub">
-            <div className="container py-3 py-md-5">
-                <div className="row justify-content-center">
-                    <div className="col-12 col-lg-8">
-                        <div className="card shadow">
-                            <div className="card-header bg-warning text-dark">
-                                <h4 className="mb-0 fs-5 fs-md-4">🍺 Secure Checkout</h4>
-                            </div>
-                            <div className="card-body p-3 p-md-4">
-                                {/* Order Summary */}
-                                <div
-                                    className="order-summary mb-4 p-3 rounded"
-                                    style={{
-                                        backgroundColor: '#fffbe6', // very light yellow, easy on the eyes
-                                        border: '1px solid #ffe066'
-                                    }}
-                                >
-                                    <h5 className="mb-3 fs-6 fs-md-5" style={{ color: '#b8860b' }}>Order Summary</h5>
-                                    <div className="d-flex justify-content-between mb-2">
-                                        <span className="text-break" style={{ color: '#333' }}>{product.name}</span>
-                                        <span className="ms-2 text-nowrap" style={{ color: '#b8860b' }}>¥{product.price.toLocaleString()}</span>
-                                    </div>
-                                    <div className="d-flex justify-content-between mb-2">
-                                        <span style={{ color: '#555' }}>Quantity</span>
-                                        <span style={{ color: '#555' }}>{quantity}</span>
-                                    </div>
-                                    <hr className="my-2" style={{ borderColor: '#ffe066' }} />
-                                    <div className="d-flex justify-content-between fw-bold fs-6 fs-md-5">
-                                        <span style={{ color: '#b8860b' }}>Total</span>
-                                        <span className="text-warning" style={{ color: '#ff9800' }}>¥{totalAmount.toLocaleString()}</span>
-                                    </div>
-                                </div>
-
-                                {/* Payment Method Selection */}
-                                <div className="payment-methods mb-4">
-                                    <h5 className="mb-3 fs-6 fs-md-5">Choose Payment Method</h5>
-                                    <div className="row g-2">
-                                        <div className="col-12 col-md-4 mb-2">
-                                            <input
-                                                type="radio"
-                                                className="btn-check"
-                                                name="payment"
-                                                id="credit"
-                                                checked={selectedPayment === 'credit'}
-                                                onChange={() => setSelectedPayment('credit')}
-                                            />
-                                            <label className="btn btn-outline-primary w-100 py-3" htmlFor="credit">
-                                                <span className="d-block">💳</span>
-                                                <span className="small">Credit Card</span>
-                                            </label>
-                                        </div>
-                                        <div className="col-12 col-md-4 mb-2">
-                                            <input
-                                                type="radio"
-                                                className="btn-check"
-                                                name="payment"
-                                                id="paypay"
-                                                checked={selectedPayment === 'paypay'}
-                                                onChange={() => setSelectedPayment('paypay')}
-                                            />
-                                            <label
-                                                className="btn w-100 p-0 d-flex align-items-stretch justify-content-center"
-                                                htmlFor="paypay"
-                                                style={{
-                                                    height: '100%',
-                                                    border: selectedPayment === 'paypay' ? '2px solid #dc3545' : '1px solid #dc3545',
-                                                    boxShadow: selectedPayment === 'paypay' ? '0 0 0 0.2rem rgba(220,53,69,.25)' : undefined,
-                                                    minHeight: 70,
-                                                    padding: 0,
-                                                    background: 'none'
-                                                }}
-                                            >
-                                                <img
-                                                    src="/images/paypay.png"
-                                                    alt="PayPay"
-                                                    style={{
-                                                        width: '100%',
-                                                        height: '70px',
-                                                        objectFit: 'cover',
-                                                        display: 'block',
-                                                        borderRadius: '0.375rem'
-                                                    }}
-                                                />
-                                            </label>
-                                        </div>
-                                        <div className="col-12 col-md-4 mb-2">
-                                            <input
-                                                type="radio"
-                                                className="btn-check"
-                                                name="payment"
-                                                id="cod"
-                                                checked={selectedPayment === 'cod'}
-                                                onChange={() => setSelectedPayment('cod')}
-                                            />
-                                            <label className="btn btn-outline-success w-100 py-3" htmlFor="cod">
-                                                <span className="d-block">💰</span>
-                                                <span className="small">Cash on Delivery</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Customer Email Input */}
-                                <div className="mb-4">
-                                    <label htmlFor="customerEmail" className="form-label fw-bold">
-                                        📧 Email Address <span className="text-danger">*</span> <small className="text-muted">(Required for Cash on Delivery)</small>
-                                    </label>
-                                    <input
-                                        type="email"
-                                        className="form-control"
-                                        id="customerEmail"
-                                        placeholder="Enter your email address"
-                                        value={customerEmail}
-                                        onChange={(e) => setCustomerEmail(e.target.value)}
-                                        required={selectedPayment === 'cod'}
-                                    />
-                                    <small className="text-muted">
-                                        {selectedPayment === 'cod'
-                                            ? 'We\'ll send order confirmation to this email'
-                                            : 'Optional for PayPay and Credit Card payments'
-                                        }
-                                    </small>
-                                </div>
-
-                                {/* Credit Card Form with Stripe */}
-                                {selectedPayment === 'credit' && (
-                                    <div className="payment-form">
-                                        <h6 className="mb-3 fs-6">💳 Credit Card Information</h6>
-                                        <StripeCheckout
-                                            productId={product.id}
-                                            quantity={quantity}
-                                            totalAmount={totalAmount}
-                                            onSuccess={(orderId) => {
-                                                showSuccess('Payment successful! Redirecting...');
-                                                setTimeout(() => {
-                                                    router.push(`/payment/success?orderId=${orderId}&method=credit_card`);
-                                                }, 1500);
-                                            }}
-                                            onError={(error) => {
-                                                showError(error);
-                                            }}
-                                        />
-                                    </div>
-                                )}
-
-
-                                {/* PayPay Payment */}
-                                {selectedPayment === 'paypay' && (
-                                    <div className="text-center">
-                                        {!payPayQRCode ? (
-                                            <>
-                                                <button
-                                                    onClick={handlePayPayPayment}
-                                                    className="btn btn-danger btn-lg w-100 fw-bold d-flex align-items-center justify-content-center py-3"
-                                                    disabled={isProcessing}
-                                                >
-                                                    {isProcessing ? (
-                                                        <>
-                                                            <span className="spinner-border spinner-border-sm me-2" role="status"></span>
-                                                            <span className="d-none d-sm-inline">Creating QR Code...</span>
-                                                            <span className="d-sm-none">Creating...</span>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <img
-                                                                src="/images/paypay.png"
-                                                                alt="PayPay"
-                                                                width={80}
-                                                                height={40}
-                                                                className="me-2 d-none d-sm-inline rounded"
-                                                                style={{ objectFit: 'contain' }}
-                                                            />
-
-                                                            <span className="d-none d-sm-inline">Generate QR Code - ¥{totalAmount.toLocaleString()}</span>
-                                                            <span className="d-sm-none text-white">Generate QR - ¥{totalAmount.toLocaleString()}</span>
-                                                        </>
-                                                    )}
-                                                </button>
-                                                <small className="text-muted d-block mt-2">
-                                                    Click to generate PayPay QR code for payment
-                                                </small>
-                                            </>
-                                        ) : (
-                                            <div className="paypay-qr-section">
-                                                <div className="alert alert-info">
-                                                    <h6 className="mb-3 fs-6">📱 Scan QR Code with PayPay App</h6>
-                                                    <div className="text-center mb-3">
-                                                        <div className="qr-code-container p-2 p-md-3 bg-white rounded border d-inline-block">
-                                                            <img
-                                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(payPayQRCode)}`}
-                                                                alt="PayPay QR Code"
-                                                                className="img-fluid"
-                                                                style={{
-                                                                    maxWidth: 'min(200px, 80vw)',
-                                                                    maxHeight: 'min(200px, 80vw)',
-                                                                    width: 'auto',
-                                                                    height: 'auto'
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        <div className="mt-2">
-                                                            <small className="text-muted">
-                                                                Scan this QR code with your PayPay app to complete payment
-                                                            </small>
-                                                        </div>
-                                                    </div>
-                                                    <div className="row text-start">
-                                                        <div className="col-6">
-                                                            <p className="mb-2 small">
-                                                                <strong>Amount:</strong><br />
-                                                                ¥{totalAmount.toLocaleString()}
-                                                            </p>
-                                                        </div>
-                                                        <div className="col-6">
-                                                            <p className="mb-2 small">
-                                                                <strong>Order ID:</strong><br />
-                                                                {currentOrderId || 'Loading...'}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <small className="text-muted d-block">
-                                                        Waiting for payment confirmation... This page will automatically update when payment is completed.
-                                                    </small>
-                                                    <div className="mt-3">
-                                                        <div className="alert alert-info small">
-                                                            <strong>🚀 Webhook-Enabled Payment Flow:</strong><br />
-                                                            1. Complete payment in your PayPay app<br />
-                                                            2. PayPay will automatically notify our server via webhook<br />
-                                                            3. Page will auto-update when payment is detected<br />
-                                                            <small className="text-muted">Real-time updates via PayPay webhooks + polling backup</small>
-                                                        </div>
-
-                                                        {/* Current Order Status */}
-                                                        <div className="alert alert-secondary small">
-                                                            <strong>📋 Current Order Status:</strong><br />
-                                                            <strong>Order ID:</strong> {currentOrderId || 'Creating...'}<br />
-                                                            <strong>Status:</strong> <span className="badge bg-warning">Pending</span><br />
-                                                            <strong>Webhook URL:</strong> <small className="text-muted d-none d-md-inline">https://fe3c11d1c905.ngrok-free.app/api/paypay-webhook</small>
-                                                            <small className="text-muted d-md-none">Webhook configured</small>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="d-flex flex-column flex-sm-row gap-2 mt-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            setPayPayQRCode(null);
-                                                            setPayPayPaymentId(null);
-                                                        }}
-                                                        className="btn btn-outline-secondary flex-fill py-2"
-                                                    >
-                                                        <span className="d-none d-sm-inline">Cancel & Generate New QR Code</span>
-                                                        <span className="d-sm-none">Cancel</span>
-                                                    </button>
-                                                    <button
-                                                        onClick={async () => {
-                                                            try {
-                                                                showSuccess('Checking payment status...');
-                                                                console.log('🔍 Checking payment status for:', { currentOrderId, payPayPaymentId });
-
-                                                                const response = await fetch(`/api/check-payment-status?orderId=${currentOrderId}`);
-                                                                const data = await response.json();
-
-                                                                console.log('📋 Payment status response:', data);
-
-                                                                if (data.status === 'completed') {
-                                                                    showSuccess('Payment completed! Redirecting...');
-                                                                    setTimeout(() => {
-                                                                        router.push(`/payment/success?orderId=${currentOrderId}&method=paypay`);
-                                                                    }, 1500);
-                                                                } else if (data.status === 'failed') {
-                                                                    showError('Payment failed. Please try again.');
-                                                                    setPayPayQRCode(null);
-                                                                    setPayPayPaymentId(null);
-                                                                } else {
-                                                                    showError(`Payment not completed yet. Status: ${data.status}. Message: ${data.message}`);
-                                                                }
-                                                            } catch (error: any) {
-                                                                console.error('Error checking payment status:', error);
-                                                                showError('Failed to check payment status');
-                                                            }
-                                                        }}
-                                                        className="btn btn-info btn-sm me-2"
-                                                        disabled={!currentOrderId}
-                                                    >
-                                                        🔍 Check Payment Status
-                                                    </button>
-
-                                                    {/* Manual Success Button for Testing */}
-                                                    <button
-                                                        onClick={async () => {
-                                                            try {
-                                                                if (!currentOrderId) {
-                                                                    showError('No order ID available');
-                                                                    return;
-                                                                }
-
-                                                                showSuccess('Manually completing payment...');
-
-                                                                const response = await fetch('/api/check-payment-status', {
-                                                                    method: 'POST',
-                                                                    headers: {
-                                                                        'Content-Type': 'application/json',
-                                                                    },
-                                                                    body: JSON.stringify({
-                                                                        orderId: currentOrderId,
-                                                                        action: 'force_complete'
-                                                                    }),
-                                                                });
-
-                                                                const data = await response.json();
-
-                                                                if (response.ok && data.status === 'completed') {
-                                                                    showSuccess('Payment manually completed! Redirecting...');
-                                                                    setTimeout(() => {
-                                                                        router.push(`/payment/success?orderId=${currentOrderId}&method=paypay`);
-                                                                    }, 1500);
-                                                                } else {
-                                                                    showError('Failed to manually complete payment');
-                                                                }
-                                                            } catch (error: any) {
-                                                                console.error('Error manually completing payment:', error);
-                                                                showError('Failed to manually complete payment');
-                                                            }
-                                                        }}
-                                                        className="btn btn-success btn-sm me-2"
-                                                        disabled={!currentOrderId}
-                                                        title="Force complete payment for testing"
-                                                    >
-                                                        ✅ Force Complete
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            showSuccess('Simulating payment completion...');
-                                                            setTimeout(() => {
-                                                                router.push(`/payment/success?orderId=demo&method=paypay`);
-                                                            }, 1500);
-                                                        }}
-                                                        className="btn btn-success flex-fill py-2"
-                                                    >
-                                                        <span className="d-none d-sm-inline">🧪 Test Complete Payment</span>
-                                                        <span className="d-sm-none">🧪 Test</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Cash on Delivery */}
-                                {selectedPayment === 'cod' && (
-                                    <div className="text-center">
-                                        <div className="alert alert-info mb-4">
-                                            <h6 className="fs-6 mb-3">💰 Cash on Delivery</h6>
-                                            <p className="mb-2">Pay ¥{totalAmount.toLocaleString()} when your order is delivered.</p>
-                                            <small className="text-muted">Delivery fee: ¥300 (Free for orders over ¥2,000)</small>
-                                        </div>
-
-                                        {/* Delivery Information */}
-                                        <div className="delivery-info mb-4 p-3 rounded" style={{ backgroundColor: '#f8f9fa', border: '1px solid #dee2e6' }}>
-                                            <h6 className="mb-3" style={{ color: '#495057' }}>📦 Delivery Details</h6>
-                                            <div className="row text-start">
-                                                <div className="col-md-6 mb-2">
-                                                    <div className="d-flex align-items-center mb-2">
-                                                        <i className="fas fa-clock me-2" style={{ color: '#28a745' }}></i>
-                                                        <span style={{ fontSize: '14px' }}>Delivery Time: 2-3 business days</span>
-                                                    </div>
-                                                    <div className="d-flex align-items-center mb-2">
-                                                        <i className="fas fa-map-marker-alt me-2" style={{ color: '#dc3545' }}></i>
-                                                        <span style={{ fontSize: '14px' }}>Delivery Area: Tokyo, Osaka, Kyoto</span>
-                                                    </div>
-                                                </div>
-                                                <div className="col-md-6 mb-2">
-                                                    <div className="d-flex align-items-center mb-2">
-                                                        <i className="fas fa-credit-card me-2" style={{ color: '#ffc107' }}></i>
-                                                        <span style={{ fontSize: '14px' }}>Payment: Cash only</span>
-                                                    </div>
-                                                    <div className="d-flex align-items-center mb-2">
-                                                        <i className="fas fa-shield-alt me-2" style={{ color: '#17a2b8' }}></i>
-                                                        <span style={{ fontSize: '14px' }}>Order Protection: 100% Secure</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Important Notes */}
-                                        <div className="important-notes mb-4 p-3 rounded" style={{ backgroundColor: '#f8d7da', border: '1px solid #f5c6cb' }}>
-                                            <h6 className="mb-3" style={{ color: '#721c24' }}>⚠️ Important Information</h6>
-                                            <ul className="text-start mb-0" style={{ fontSize: '14px', color: '#721c24' }}>
-                                                <li>Please have exact change ready for delivery</li>
-                                                <li>Orders are processed within 24 hours</li>
-                                                <li>Delivery attempts: 2 times maximum</li>
-                                                <li>Contact us if you need to reschedule</li>
-                                                <li>Returns accepted within 7 days</li>
-                                            </ul>
-                                        </div>
-
-                                        <button
-                                            className="cod-button"
-                                            style={{
-                                                backgroundColor: '#dc3545',
-                                                color: '#ffffff',
-                                                borderColor: '#dc3545',
-                                                border: '2px solid #dc3545',
-                                                borderRadius: '8px',
-                                                padding: '12px 24px',
-                                                fontSize: '18px',
-                                                fontWeight: 'bold',
-                                                width: '100%',
-                                                cursor: 'pointer'
-                                            }}
-                                            onClick={async () => {
-                                                try {
-                                                    if (!customerEmail) {
-                                                        showError('Please enter your email address');
-                                                        return;
-                                                    }
-
-                                                    showSuccess('Creating Cash on Delivery order...');
-
-                                                    // Create order in database
-                                                    const response = await fetch('/api/create-payment', {
-                                                        method: 'POST',
-                                                        headers: {
-                                                            'Content-Type': 'application/json',
-                                                        },
-                                                        body: JSON.stringify({
-                                                            productId: product.id,
-                                                            quantity: quantity,
-                                                            customerEmail: customerEmail,
-                                                            paymentMethod: 'cod'
-                                                        }),
-                                                    });
-
-                                                    const data = await response.json();
-
-                                                    if (response.ok && data.orderId) {
-                                                        showSuccess('Cash on Delivery order created! Redirecting...');
-                                                        setTimeout(() => {
-                                                            router.push(`/payment/success?orderId=${data.orderId}&method=cod`);
-                                                        }, 1500);
-                                                    } else {
-                                                        showError(data.error || 'Failed to create order');
-                                                    }
-                                                } catch (error: any) {
-                                                    console.error('Error creating COD order:', error);
-                                                    showError('Failed to create order. Please try again.');
-                                                }
-                                            }}
-                                        >
-                                            📦 Place COD Order
-                                        </button>
-                                    </div>
-                                )}
-
-                                <div className="text-center mt-3">
-                                    <small className="text-muted">
-                                        🔒 Your payment information is secure and encrypted
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            {method === 'paypay' && (
+              <>
+                <div className="field">
+                  <label htmlFor="paypay-email">Email for the receipt (optional)</label>
+                  <input
+                    id="paypay-email"
+                    type="email"
+                    className="input"
+                    autoComplete="email"
+                    value={paypayEmail}
+                    onChange={(e) => setPaypayEmail(e.target.value)}
+                  />
                 </div>
-            </div>
+                <div style={{ marginTop: '1.25rem' }}>
+                  <PayPayCheckout productId={product.id} quantity={quantity} totalAmount={totalAmount} customerEmail={paypayEmail} />
+                </div>
+              </>
+            )}
 
-            {/* Toast Notification - Positioned at bottom */}
-            <Toast
-                message={toast.message}
-                type={toast.type}
-                show={toast.show}
-                onClose={hideToast}
-            />
-        </Layout>
-    );
+            {method === 'cod' && <CashOnDelivery product={product} quantity={quantity} totalAmount={totalAmount} />}
+          </section>
+
+          <aside className="panel brut bg-sand summary" aria-label="Order summary">
+            <h2 style={{ fontSize: '1.5rem' }}>Your order</h2>
+            <div className="summary-item" style={{ marginTop: '1.25rem' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={product.image} alt="" />
+              <div>
+                <p style={{ fontWeight: 800 }}>{product.name}</p>
+                <p className="muted">
+                  {quantity} × ¥{product.price.toLocaleString()}
+                </p>
+              </div>
+            </div>
+            <div className="summary-rows">
+              <div>
+                <span>Subtotal</span>
+                <span>¥{totalAmount.toLocaleString()}</span>
+              </div>
+              <div>
+                <span>Delivery</span>
+                <span>Free (demo)</span>
+              </div>
+              <div className="total">
+                <span>Total</span>
+                <span>¥{totalAmount.toLocaleString()}</span>
+              </div>
+            </div>
+            <p className="muted" style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
+              Prices include tax. Demo store: no real payment is taken and nothing is shipped.
+            </p>
+          </aside>
+        </div>
+      </div>
+
+      <Toast message={toast.message} type={toast.type} show={toast.show} onClose={hideToast} />
+    </Layout>
+  );
 }
 
 export const getServerSideProps: GetServerSideProps = async ({ query }) => {
-    const productId = parseInt(query.productId as string);
-    const quantity = parseInt(query.quantity as string) || 1;
+  const productId = parseInt(query.productId as string, 10);
+  const rawQty = parseInt(query.quantity as string, 10);
+  const quantity = Number.isFinite(rawQty) ? Math.min(24, Math.max(1, rawQty)) : 1;
 
-    const product = await getProductById(productId);
+  const product = Number.isFinite(productId) ? await getProductById(productId) : null;
+  if (!product) return { notFound: true };
 
-    if (!product) {
-        return {
-            notFound: true,
-        };
-    }
-
-    const totalAmount = product.price * quantity;
-
-    return {
-        props: {
-            product,
-            quantity,
-            totalAmount,
-        },
-    };
+  return {
+    props: { product, quantity, totalAmount: product.price * quantity },
+  };
 };

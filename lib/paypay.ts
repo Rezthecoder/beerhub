@@ -1,330 +1,160 @@
+/**
+ * PayPay "Dynamic QR" payments (sandbox while NEXT_PUBLIC_DEMO_MODE is not "false").
+ *
+ * Flow:
+ *   1. createQRCode()   → PayPay returns a payment page URL (and a deeplink for the app)
+ *   2. the customer pays on that page or by scanning the QR code with the PayPay app
+ *   3. getPaymentStatus() asks PayPay whether the payment went through
+ * PayPay's API is the only source of truth: nothing is marked paid from browser input.
+ *
+ * Server-only module.
+ */
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const PAYPAY = require('@paypayopa/paypayopa-sdk-node');
 
-// Configure PayPay SDK
-PAYPAY.Configure({
-  clientId: process.env.PAYPAY_API_KEY!,
-  clientSecret: process.env.PAYPAY_SECRET!,
-  merchantId: process.env.PAYPAY_MERCHANT_ID!,
-  /* production_mode : Set the connection destination of the sandbox environment / production environment. 
-     The default false setting connects to the sandbox environment. 
-     The True setting connects to the production environment. */
-  productionMode: false,
-});
+export type PaymentState = 'pending' | 'paid' | 'failed';
 
-interface CreatePaymentRequest {
+export interface PayPayStatus {
+  state: PaymentState;
+  /** Raw PayPay status, e.g. CREATED, COMPLETED, CANCELED, EXPIRED */
+  paypayStatus: string;
   merchantPaymentId: string;
-  amount: {
-    amount: number;
-    currency: 'JPY';
-  };
-  orderDescription: string;
+  paymentId?: string;
+  amount?: number;
+  description?: string;
+  paidAt?: string;
+}
+
+interface SdkResult {
+  STATUS?: number;
+  BODY?: { resultInfo?: { code: string; message: string; codeId?: string }; data?: any };
+  ERROR?: string;
+}
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE !== 'false';
+
+let configured = false;
+
+export function isPayPayConfigured(): boolean {
+  return Boolean(process.env.PAYPAY_API_KEY && process.env.PAYPAY_SECRET && process.env.PAYPAY_MERCHANT_ID);
+}
+
+function sdk() {
+  if (!isPayPayConfigured()) {
+    throw new PayPayError(
+      'PayPay is not set up: add PAYPAY_API_KEY, PAYPAY_SECRET and PAYPAY_MERCHANT_ID.',
+      'NOT_CONFIGURED'
+    );
+  }
+  if (!configured) {
+    PAYPAY.Configure({
+      clientId: process.env.PAYPAY_API_KEY,
+      clientSecret: process.env.PAYPAY_SECRET,
+      merchantId: process.env.PAYPAY_MERCHANT_ID,
+      // Sandbox in demo mode. Production only when demo mode is switched off.
+      productionMode: !DEMO_MODE && process.env.PAYPAY_PRODUCTION === 'true',
+    });
+    configured = true;
+  }
+  return PAYPAY;
+}
+
+export class PayPayError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = 'PayPayError';
+  }
+}
+
+function unwrap(result: SdkResult, action: string) {
+  if (result.ERROR) {
+    throw new PayPayError(`Could not reach PayPay (${action}): ${result.ERROR}`, 'NETWORK');
+  }
+  const info = result.BODY?.resultInfo;
+  if (!info) {
+    throw new PayPayError(`PayPay sent an unexpected response (${action}).`, 'BAD_RESPONSE');
+  }
+  return { code: info.code, message: info.message, data: result.BODY?.data };
+}
+
+/** A unique id PayPay will accept (≤ 64 chars). The order id is embedded so status checks can update it. */
+export function newMerchantPaymentId(orderId: number | null): string {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `bh-o${orderId ?? 0}-${Date.now().toString(36)}-${random}`;
+}
+
+/** Reads the order id back out of a merchantPaymentId made by newMerchantPaymentId (0 = no database order). */
+export function orderIdFromMerchantPaymentId(merchantPaymentId: string): number | null {
+  const match = /^bh-o(\d+)-[a-z0-9]+-[a-z0-9]+$/.exec(merchantPaymentId);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return id > 0 ? id : null;
+}
+
+export function isOurMerchantPaymentId(merchantPaymentId: string): boolean {
+  return /^bh-o\d+-[a-z0-9]+-[a-z0-9]+$/.test(merchantPaymentId);
+}
+
+export async function createQRCode(input: {
+  merchantPaymentId: string;
+  amount: number;
+  description: string;
   redirectUrl: string;
-  redirectType: string;
-  userAgent: string;
-  webhookUrl?: string;
-}
-
-interface PayPayQRPayload {
-  merchantPaymentId: string;
-  amount: {
-    amount: number;
-    currency: 'JPY';
+  userAgent?: string;
+}): Promise<{ url: string; deeplink?: string; codeId?: string; expiresAt?: string }> {
+  const payload = {
+    merchantPaymentId: input.merchantPaymentId,
+    amount: { amount: input.amount, currency: 'JPY' },
+    codeType: 'ORDER_QR',
+    orderDescription: input.description.slice(0, 255),
+    isAuthorization: false,
+    redirectUrl: input.redirectUrl,
+    // WEB_LINK: after paying, PayPay sends the browser back to redirectUrl
+    redirectType: 'WEB_LINK',
+    ...(input.userAgent ? { userAgent: input.userAgent } : {}),
+    // The payment page stays valid for 10 minutes
+    expiryDate: Math.floor(Date.now() / 1000) + 10 * 60,
   };
-  codeType: 'ORDER_QR';
-  orderDescription: string;
-  isAuthorization: boolean;
-}
 
-interface PayPayAPIResponse {
-  BODY: {
-    resultInfo: {
-      code: string;
-      message: string;
-      codeId: string;
-    };
-    data?: {
-      paymentId: string;
-      status: string;
-      acceptedAt: number;
-      merchantPaymentId: string;
-      amount: {
-        amount: number;
-        currency: string;
-      };
-      orderDescription: string;
-      redirectUrl: string;
-      redirectType: string;
-      deeplink: string;
-      webPaymentUrl: string;
-    };
+  const result: SdkResult = await sdk().QRCodeCreate(payload);
+  const { code, message, data } = unwrap(result, 'create payment');
+
+  if (code !== 'SUCCESS' || !data?.url) {
+    throw new PayPayError(`PayPay refused the payment: ${message} (${code})`, code);
+  }
+
+  return {
+    url: data.url,
+    deeplink: data.deeplink,
+    codeId: data.codeId,
+    expiresAt: data.expiryDate ? new Date(data.expiryDate * 1000).toISOString() : undefined,
   };
 }
 
-interface PayPayPaymentResponse {
-  resultInfo: {
-    code: string;
-    message: string;
-    codeId: string;
-  };
-  data?: {
-    paymentId: string;
-    status: string;
-    acceptedAt: number;
-    merchantPaymentId: string;
-    amount: {
-      amount: number;
-      currency: string;
-    };
-    orderDescription: string;
-    redirectUrl: string;
-    redirectType: string;
-    deeplink: string;
-    webPaymentUrl: string;
+const PAID = new Set(['COMPLETED']);
+const FAILED = new Set(['FAILED', 'CANCELED', 'EXPIRED']);
+
+export async function getPaymentStatus(merchantPaymentId: string): Promise<PayPayStatus> {
+  // The SDK fills the {merchantPaymentId} path placeholder from an array.
+  const result: SdkResult = await sdk().GetCodePaymentDetails([merchantPaymentId]);
+  const { code, message, data } = unwrap(result, 'check payment');
+
+  // Code created but nobody has paid yet
+  if (code === 'DYNAMIC_QR_PAYMENT_NOT_FOUND' || (code === 'SUCCESS' && !data?.status)) {
+    return { state: 'pending', paypayStatus: 'CREATED', merchantPaymentId };
+  }
+  if (code !== 'SUCCESS') {
+    throw new PayPayError(`PayPay could not check the payment: ${message} (${code})`, code);
+  }
+
+  const status: string = data.status;
+  return {
+    state: PAID.has(status) ? 'paid' : FAILED.has(status) ? 'failed' : 'pending',
+    paypayStatus: status,
+    merchantPaymentId,
+    paymentId: data.paymentId,
+    amount: data.amount?.amount,
+    description: data.orderDescription,
+    paidAt: data.acceptedAt ? new Date(data.acceptedAt * 1000).toISOString() : undefined,
   };
 }
-
-class PayPayService {
-  async createPayment(paymentRequest: CreatePaymentRequest): Promise<PayPayPaymentResponse> {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log('Creating PayPay payment with request:', paymentRequest);
-
-        // Creating the payload to create a QR Code with webhook support
-        const payload = {
-          merchantPaymentId: paymentRequest.merchantPaymentId,
-          amount: {
-            amount: paymentRequest.amount.amount,
-            currency: paymentRequest.amount.currency
-          },
-          codeType: "ORDER_QR",
-          orderDescription: paymentRequest.orderDescription,
-          isAuthorization: false,
-          redirectUrl: paymentRequest.redirectUrl,
-          redirectType: "APP_DEEP_LINK",
-          userAgent: paymentRequest.userAgent,
-          // Add webhook URL if provided
-          ...(paymentRequest.webhookUrl && { webhookUrl: paymentRequest.webhookUrl })
-        };
-
-        console.log('🔗 Webhook URL being sent to PayPay:', paymentRequest.webhookUrl);
-        console.log('📦 Full payload sent to PayPay:', JSON.stringify(payload, null, 2));
-
-        // Calling the method to create a QR code
-        PAYPAY.QRCodeCreate(payload, (response: PayPayAPIResponse) => {
-          // Printing if the method call was SUCCESS
-          console.log('🎯 PayPay QR Code Creation Response:');
-          console.log('📋 Result Code:', response.BODY.resultInfo.code);
-          console.log('📋 Result Message:', response.BODY.resultInfo.message);
-          console.log('📋 Full Response:', response);
-          console.log('📋 Payload Sent:', payload);
-
-          // Check if the method call was SUCCESS
-          if (response && response.BODY && response.BODY.resultInfo) {
-            const resultInfo = response.BODY.resultInfo;
-
-            if (resultInfo.code === 'SUCCESS') {
-              resolve({
-                resultInfo: resultInfo,
-                data: response.BODY.data
-              });
-            } else {
-              reject(new Error(`PayPay API Error: ${resultInfo.message} (Code: ${resultInfo.code})`));
-            }
-          } else {
-            reject(new Error('Invalid PayPay API response format'));
-          }
-        });
-
-      } catch (error: any) {
-        console.error('PayPay API Error:', error);
-        reject(new Error(`Failed to create PayPay payment: ${error.message}`));
-      }
-    });
-  }
-
-  async getPaymentDetails(merchantPaymentId: string): Promise<PayPayPaymentResponse> {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log('🔍 Getting PayPay payment details for merchantPaymentId:', merchantPaymentId);
-        console.log('📋 Following PayPay\'s recommended 4-5 second polling interval');
-        
-        // 🎯 SMART APPROACH: Try both methods based on payment stage
-        // First, try GetCodePaymentDetails (for QR codes before payment)
-        PAYPAY.GetCodePaymentDetails(merchantPaymentId, (response: PayPayAPIResponse) => {
-          console.log('📡 PayPay GetCodePaymentDetails API Response:');
-          console.log('📊 Result Code:', response.BODY.resultInfo.code);
-          console.log('📊 Result Message:', response.BODY.resultInfo.message);
-          console.log('📊 Full Response Data:', response.BODY.data);
-
-          if (response && response.BODY && response.BODY.resultInfo) {
-            const resultInfo = response.BODY.resultInfo;
-            
-            if (resultInfo.code === 'SUCCESS') {
-              console.log('✅ PayPay QR Code Status Check Successful');
-              console.log('📱 QR Code Status:', response.BODY.data?.status);
-              
-              // If QR code is still active, payment hasn't been completed yet
-              if (response.BODY.data?.status === 'CREATED' || response.BODY.data?.status === 'ACTIVE') {
-                console.log('⏳ QR Code Active - Payment not completed yet');
-                console.log('💡 This is normal for pending payments');
-              }
-
-              resolve({
-                resultInfo: resultInfo,
-                data: response.BODY.data
-              });
-            } else if (resultInfo.code === 'DYNAMIC_QR_PAYMENT_NOT_FOUND') {
-              console.log('🔄 QR Code not found - trying GetPaymentDetails for completed payment...');
-              
-              // Fallback: Try GetPaymentDetails for completed payments
-              PAYPAY.GetPaymentDetails(merchantPaymentId, (paymentResponse: PayPayAPIResponse) => {
-                console.log('📡 PayPay GetPaymentDetails API Response:');
-                console.log('📊 Result Code:', paymentResponse.BODY.resultInfo.code);
-                console.log('📊 Result Message:', paymentResponse.BODY.resultInfo.message);
-                console.log('📊 Full Response Data:', paymentResponse.BODY.data);
-
-                if (paymentResponse && paymentResponse.BODY && paymentResponse.BODY.resultInfo) {
-                  const paymentResultInfo = paymentResponse.BODY.resultInfo;
-                  
-                  if (paymentResultInfo.code === 'SUCCESS') {
-                    console.log('✅ PayPay Payment Status Check Successful');
-                    console.log('💳 Payment Status:', paymentResponse.BODY.data?.status);
-                    
-                    // Log important status changes as per PayPay documentation
-                    if (paymentResponse.BODY.data?.status === 'COMPLETED') {
-                      console.log('🎉 Payment Status: COMPLETED - Payment successful!');
-                    } else if (paymentResponse.BODY.data?.status === 'AUTHORIZED') {
-                      console.log('🔐 Payment Status: AUTHORIZED - Preauth payment authorized');
-                    } else if (paymentResponse.BODY.data?.status === 'CREATED') {
-                      console.log('⏳ Payment Status: CREATED - Payment initiated, waiting for completion');
-                    } else if (paymentResponse.BODY.data?.status === 'FAILED') {
-                      console.log('❌ Payment Status: FAILED - Payment failed');
-                    } else if (paymentResponse.BODY.data?.status === 'CANCELED') {
-                      console.log('🚫 Payment Status: CANCELED - Payment was canceled');
-                    } else if (paymentResponse.BODY.data?.status === 'EXPIRED') {
-                      console.log('⏰ Payment Status: EXPIRED - Payment expired');
-                    }
-
-                    resolve({
-                      resultInfo: paymentResultInfo,
-                      data: paymentResponse.BODY.data
-                    });
-                  } else {
-                    console.log('⚠️ Both API methods failed - payment may not exist yet');
-                    console.log('📝 This is normal for newly created QR codes');
-                    reject(new Error(`PayPay API Error: ${paymentResultInfo.message} (Code: ${paymentResultInfo.code})`));
-                  }
-                } else {
-                  console.log('❌ Invalid PayPay payment details response format');
-                  reject(new Error('Invalid PayPay payment details response format'));
-                }
-              });
-            } else {
-              console.log('⚠️ PayPay API returned non-success result:', resultInfo);
-              reject(new Error(`PayPay API Error: ${resultInfo.message} (Code: ${resultInfo.code})`));
-            }
-          } else {
-            console.log('❌ Invalid PayPay response format');
-            reject(new Error('Invalid PayPay response format'));
-          }
-        });
-
-      } catch (error: any) {
-        console.error('🚨 PayPay API Error:', error);
-        reject(new Error(`Failed to get PayPay payment details: ${error.message}`));
-      }
-    });
-  }
-
-  async cancelPayment(merchantPaymentId: string): Promise<PayPayPaymentResponse> {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log('Cancelling PayPay payment:', merchantPaymentId);
-
-        PAYPAY.CancelPayment(merchantPaymentId, (response: any) => {
-          console.log('PayPay cancel response:', response);
-
-          if (response && response.BODY && response.BODY.resultInfo) {
-            const resultInfo = response.BODY.resultInfo;
-            console.log('PayPay cancel result code:', resultInfo.code);
-
-            resolve({
-              resultInfo: resultInfo,
-              data: response.BODY.data
-            });
-          } else {
-            reject(new Error('Invalid PayPay cancel response format'));
-          }
-        });
-
-      } catch (error: any) {
-        console.error('PayPay API Error:', error);
-        reject(new Error(`Failed to cancel PayPay payment: ${error.message}`));
-      }
-    });
-  }
-
-  async refundPayment(merchantPaymentId: string, refundAmount?: number): Promise<PayPayPaymentResponse> {
-    return new Promise((resolve, reject) => {
-      try {
-        const refundRequest = {
-          merchantRefundId: `refund_${Date.now()}`,
-          paymentId: merchantPaymentId,
-          amount: refundAmount ? { amount: refundAmount, currency: 'JPY' } : undefined,
-          reason: 'Customer requested refund'
-        };
-
-        console.log('Processing PayPay refund:', refundRequest);
-
-        PAYPAY.PaymentRefund(refundRequest, (response: any) => {
-          console.log('PayPay refund response:', response);
-
-          if (response && response.BODY && response.BODY.resultInfo) {
-            const resultInfo = response.BODY.resultInfo;
-            console.log('PayPay refund result code:', resultInfo.code);
-
-            resolve({
-              resultInfo: resultInfo,
-              data: response.BODY.data
-            });
-          } else {
-            reject(new Error('Invalid PayPay refund response format'));
-          }
-        });
-
-      } catch (error: any) {
-        console.error('PayPay Refund Error:', error);
-        reject(new Error(`Failed to refund PayPay payment: ${error.message}`));
-      }
-    });
-  }
-
-  // Webhook configuration helper
-  getWebhookConfiguration() {
-    return {
-      webhookUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/paypay-webhook`,
-      webhookEvents: [
-        'PAYMENT_STATUS',
-        'PAYMENT_COMPLETED', 
-        'TRANSACTION'
-      ],
-      webhookFormat: {
-        notification_type: 'Transaction',
-        merchant_order_id: '{{order_id}}',
-        state: '{{payment_status}}',
-        order_amount: '{{amount}}',
-        paid_at: '{{timestamp}}'
-      },
-      instructions: [
-        '1. Go to PayPay Workbench: https://stg-www.paypay.ne.jp/',
-        '2. Navigate to Settings → Webhooks',
-        '3. Add webhook URL: ' + `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/paypay-webhook`,
-        '4. Select events: Payment Status, Payment Completed, Transaction',
-        '5. Save configuration'
-      ]
-    };
-  }
-}
-
-export const payPayService = new PayPayService();
-export type { CreatePaymentRequest, PayPayPaymentResponse, PayPayQRPayload, PayPayAPIResponse };

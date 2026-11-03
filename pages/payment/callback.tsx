@@ -1,114 +1,130 @@
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 
-export default function PaymentCallback() {
-    const router = useRouter();
-    const [status, setStatus] = useState<'processing' | 'success' | 'failed' | 'timeout'>('processing');
-    const [message, setMessage] = useState('Verifying your PayPay payment...');
+type View = 'checking' | 'failed' | 'slow' | 'error';
 
-    // Polling function to check payment status
-    const pollPaymentStatus = async (merchantPaymentId: string) => {
-        const maxAttempts = 10; // number of polls before timeout
-        let attempt = 0;
+const POLL_MS = 3000;
+const MAX_ATTEMPTS = 20; // about a minute
 
-        while (attempt < maxAttempts) {
-            try {
-                const res = await fetch(`/api/get-payment-status?merchantPaymentId=${merchantPaymentId}`);
-                const data = await res.json();
-                console.log(`Attempt ${attempt + 1}:`, data);
+/**
+ * PayPay sends the customer here after they finish on its payment page.
+ * We confirm the result with PayPay (via our API) before showing success.
+ */
+export default function PayPayCallback() {
+  const router = useRouter();
+  const [view, setView] = useState<View>('checking');
+  const [detail, setDetail] = useState('');
 
-                if (data.status === 'COMPLETED') {
-                    setStatus('success');
-                    setMessage('Payment verified! Redirecting...');
-                    setTimeout(() => {
-                        router.push(`/payment/success?orderId=${router.query.orderId}`);
-                    }, 2000);
-                    return;
-                }
+  useEffect(() => {
+    if (!router.isReady) return;
+    const mpid = typeof router.query.mpid === 'string' ? router.query.mpid : '';
+    if (!mpid) {
+      setView('error');
+      setDetail('This link is missing the payment reference.');
+      return;
+    }
 
-                if (['FAILED', 'CANCELED'].includes(data.status)) {
-                    setStatus('failed');
-                    setMessage('Payment failed or canceled. Redirecting...');
-                    setTimeout(() => {
-                        router.push(`/payment/failed?orderId=${router.query.orderId}`);
-                    }, 2000);
-                    return;
-                }
-            } catch (error) {
-                console.error('Error checking payment status:', error);
-            }
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
 
-            attempt++;
-            await new Promise((r) => setTimeout(r, 3000)); // wait 3 seconds before retry
+    const check = async () => {
+      attempt += 1;
+      try {
+        const res = await fetch(`/api/paypay/status?mpid=${encodeURIComponent(mpid)}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data.state === 'paid') {
+          router.replace(`/payment/success?method=paypay&mpid=${encodeURIComponent(mpid)}`);
+          return;
         }
-
-        // Timeout after max attempts
-        setStatus('timeout');
-        setMessage('Payment verification timed out. Please check later.');
-        setTimeout(() => {
-            router.push(`/payment/failed?orderId=${router.query.orderId}&reason=timeout`);
-        }, 3000);
+        if (res.ok && data.state === 'failed') {
+          setView('failed');
+          setDetail(data.paypayStatus === 'EXPIRED' ? 'The payment code expired before it was paid.' : 'The payment was cancelled.');
+          return;
+        }
+      } catch {
+        /* try again */
+      }
+      if (attempt >= MAX_ATTEMPTS) {
+        setView('slow');
+        return;
+      }
+      timer = setTimeout(check, POLL_MS);
     };
 
-    useEffect(() => {
-        if (router.query.merchantPaymentId) {
-            pollPaymentStatus(router.query.merchantPaymentId as string);
-        }
-    }, [router.query.merchantPaymentId]);
+    check();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [router.isReady, router.query.mpid, router]);
 
-    return (
-        <Layout title="Processing Payment - Food & Beer Shop">
-            <div className="container py-5">
-                <div className="row justify-content-center">
-                    <div className="col-md-6 text-center">
-                        <div className="card shadow">
-                            <div className="card-body py-5">
-                                <div className="mb-4">
-                                    {status === 'processing' && (
-                                        <div className="spinner-border text-primary" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                    {status === 'success' && (
-                                        <div className="text-success" style={{ fontSize: '4rem' }}>✓</div>
-                                    )}
-                                    {status === 'failed' && (
-                                        <div className="text-danger" style={{ fontSize: '4rem' }}>✗</div>
-                                    )}
-                                    {status === 'timeout' && (
-                                        <div className="text-warning" style={{ fontSize: '4rem' }}>⏳</div>
-                                    )}
-                                </div>
+  return (
+    <Layout title="Checking your PayPay payment - BeerHub">
+      <div className="container">
+        <div className="result brut">
+          {view === 'checking' && (
+            <>
+              <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1.5rem' }}>
+                <div className="spinner" aria-hidden="true" />
+              </div>
+              <h1>Checking with PayPay…</h1>
+              <p role="status">This usually takes a few seconds. Please keep this page open.</p>
+            </>
+          )}
 
-                                <h3 className="mb-3">
-                                    {status === 'processing' && 'Processing Payment...'}
-                                    {status === 'success' && 'Payment Verified!'}
-                                    {status === 'failed' && 'Payment Failed'}
-                                    {status === 'timeout' && 'Verification Timeout'}
-                                </h3>
-                                <p className="text-muted">{message}</p>
+          {view === 'failed' && (
+            <>
+              <span className="badge-icon bg-coral-soft" aria-hidden="true">
+                ×
+              </span>
+              <h1>Payment not completed</h1>
+              <p>{detail} Nothing was charged.</p>
+              <div className="actions">
+                <Link href="/#beers" className="btn bg-beer">
+                  Back to the beers
+                </Link>
+              </div>
+            </>
+          )}
 
-                                {status === 'failed' && (
-                                    <div className="alert alert-danger mt-3">
-                                        <small>Redirecting to error page...</small>
-                                    </div>
-                                )}
-                                {status === 'success' && (
-                                    <div className="alert alert-success mt-3">
-                                        <small>Redirecting to success page...</small>
-                                    </div>
-                                )}
-                                {status === 'timeout' && (
-                                    <div className="alert alert-warning mt-3">
-                                        <small>Please contact support if payment was deducted.</small>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </Layout>
-    );
+          {view === 'slow' && (
+            <>
+              <span className="badge-icon bg-peach" aria-hidden="true">
+                …
+              </span>
+              <h1>Still waiting for PayPay</h1>
+              <p>PayPay hasn&apos;t confirmed the payment yet. If you finished paying, check again in a moment.</p>
+              <div className="actions">
+                <button type="button" className="btn bg-beer" onClick={() => router.reload()}>
+                  Check again
+                </button>
+                <Link href="/" className="btn">
+                  Home
+                </Link>
+              </div>
+            </>
+          )}
+
+          {view === 'error' && (
+            <>
+              <span className="badge-icon bg-coral-soft" aria-hidden="true">
+                !
+              </span>
+              <h1>We couldn&apos;t find that payment</h1>
+              <p>{detail}</p>
+              <div className="actions">
+                <Link href="/" className="btn bg-beer">
+                  Home
+                </Link>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
 }

@@ -1,258 +1,133 @@
 import { GetServerSideProps } from 'next';
+import Link from 'next/link';
 import Layout from '../../components/Layout';
-import ReceiptGenerator from '../../components/ReceiptGenerator';
 import { getSupabaseAdmin } from '../../lib/supabase';
 
-interface OrderWithDetails {
-    id: number;
-    product_id: number;
-    quantity: number;
-    total_amount: number;
-    payment_status: string;
-    payment_method: string;
-    payment_completed_at: string;
-    customer_email: string;
-    created_at: string;
-    products: {
-        name: string;
-        price: number;
-        image: string;
-    };
-    payments: Array<{
-        id: number;
-        payment_method: string;
-        amount: number;
-        status: string;
-        payment_provider_id: string;
-        created_at: string;
-    }>;
+interface AdminOrder {
+  id: number;
+  quantity: number;
+  total_amount: number;
+  payment_status: string;
+  payment_method: string | null;
+  payment_completed_at: string | null;
+  customer_email: string | null;
+  created_at: string;
+  products: { name: string; price: number; image: string } | null;
 }
 
 interface AdminOrdersProps {
-    orders: OrderWithDetails[];
+  orders: AdminOrder[];
+  databaseError: boolean;
 }
 
-export default function AdminOrders({ orders }: AdminOrdersProps) {
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
+const STATUS_BG: Record<string, string> = {
+  completed: 'var(--mint)',
+  pending: 'var(--peach)',
+  pending_cod: 'var(--peach)',
+  failed: 'var(--coral-soft)',
+};
 
-    const getStatusBadge = (status: string) => {
-        const statusClasses = {
-            completed: 'bg-success',
-            pending: 'bg-warning',
-            failed: 'bg-danger'
-        };
-        return statusClasses[status as keyof typeof statusClasses] || 'bg-secondary';
-    };
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-    const generateReceiptData = (order: OrderWithDetails) => {
-        return {
-            orderId: `ORD-${order.id}`,
-            customerName: order.customer_email?.split('@')[0] || 'Customer',
-            customerEmail: order.customer_email || '',
-            items: [
-                {
-                    name: order.products.name,
-                    quantity: order.quantity,
-                    price: order.products.price,
-                    total: order.total_amount
-                }
-            ],
-            subtotal: Math.round(order.total_amount / 1.1),
-            tax: Math.round(order.total_amount - (order.total_amount / 1.1)),
-            total: order.total_amount,
-            paymentMethod: order.payment_method || 'Unknown',
-            orderDate: order.created_at,
-            deliveryAddress: 'Customer Address'
-        };
-    };
+/** Password-protected by middleware.ts (ADMIN_USER / ADMIN_PASSWORD). */
+export default function AdminOrders({ orders, databaseError }: AdminOrdersProps) {
+  const paid = orders.filter((o) => o.payment_status === 'completed');
+  const revenue = paid.reduce((sum, o) => sum + o.total_amount, 0);
 
-    return (
-        <Layout title="Order Management - Food & Beer Shop">
-            <div className="container py-5">
-                <div className="d-flex justify-content-between align-items-center mb-4">
-                    <h1>Order Management</h1>
-                    <span className="badge bg-primary fs-6">{orders.length} Total Orders</span>
-                </div>
+  return (
+    <Layout title="Orders - BeerHub admin">
+      <div className="container" style={{ padding: '3rem 1.25rem 5rem' }}>
+        <h1 className="section-title">Orders</h1>
+        <p className="section-intro">The 50 most recent orders. All payments are test payments.</p>
 
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card shadow">
-                            <div className="card-header">
-                                <h5 className="mb-0">Recent Orders</h5>
-                            </div>
-                            <div className="card-body p-0">
-                                <div className="table-responsive">
-                                    <table className="table table-hover mb-0">
-                                        <thead className="table-light">
-                                            <tr>
-                                                <th>Order ID</th>
-                                                <th>Product</th>
-                                                <th>Quantity</th>
-                                                <th>Amount</th>
-                                                <th>Payment Method</th>
-                                                <th>Status</th>
-                                                <th>Date</th>
-                                                <th>Customer</th>
-                                                <th>Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {orders.map((order) => (
-                                                <tr key={order.id}>
-                                                    <td>
-                                                        <strong>#{order.id}</strong>
-                                                    </td>
-                                                    <td>
-                                                        <div className="d-flex align-items-center">
-                                                            <img
-                                                                src={order.products.image}
-                                                                alt={order.products.name}
-                                                                className="rounded me-2"
-                                                                style={{ width: '40px', height: '40px', objectFit: 'cover' }}
-                                                            />
-                                                            <div>
-                                                                <div className="fw-medium">{order.products.name}</div>
-                                                                <small className="text-muted">¥{order.products.price}</small>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td>{order.quantity}</td>
-                                                    <td>
-                                                        <strong>¥{order.total_amount.toLocaleString()}</strong>
-                                                    </td>
-                                                    <td>
-                                                        <span className="badge bg-info text-capitalize">
-                                                            {order.payment_method || 'N/A'}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`badge ${getStatusBadge(order.payment_status)} text-capitalize`}>
-                                                            {order.payment_status}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <div>{formatDate(order.created_at)}</div>
-                                                        {order.payment_completed_at && (
-                                                            <small className="text-success">
-                                                                Paid: {formatDate(order.payment_completed_at)}
-                                                            </small>
-                                                        )}
-                                                    </td>
-                                                    <td>
-                                                        {order.customer_email ? (
-                                                            <small>{order.customer_email}</small>
-                                                        ) : (
-                                                            <span className="text-muted">Guest</span>
-                                                        )}
-                                                    </td>
-                                                    <td>
-                                                        <ReceiptGenerator
-                                                            receiptData={generateReceiptData(order)}
-                                                            onDownload={() => console.log(`Receipt downloaded for order ${order.id}`)}
-                                                        />
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        {databaseError && (
+          <p className="alert alert-error" role="alert" style={{ marginTop: '1.5rem' }}>
+            Could not reach the order database. Check that the Supabase project is running and SUPABASE_SERVICE_ROLE_KEY is set.
+          </p>
+        )}
 
-                {/* Payment Summary */}
-                <div className="row mt-4">
-                    <div className="col-md-4">
-                        <div className="card bg-success text-white">
-                            <div className="card-body">
-                                <h5>Completed Orders</h5>
-                                <h3>{orders.filter(o => o.payment_status === 'completed').length}</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="col-md-4">
-                        <div className="card bg-warning text-white">
-                            <div className="card-body">
-                                <h5>Pending Orders</h5>
-                                <h3>{orders.filter(o => o.payment_status === 'pending').length}</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="col-md-4">
-                        <div className="card bg-primary text-white">
-                            <div className="card-body">
-                                <h5>Total Revenue</h5>
-                                <h3>¥{orders
-                                    .filter(o => o.payment_status === 'completed')
-                                    .reduce((sum, o) => sum + o.total_amount, 0)
-                                    .toLocaleString()}</h3>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </Layout>
-    );
+        <div className="stats">
+          <div className="stat brut-sm bg-sand">
+            <span className="muted">Orders</span>
+            <strong>{orders.length}</strong>
+          </div>
+          <div className="stat brut-sm bg-mint">
+            <span>Paid</span>
+            <strong>{paid.length}</strong>
+          </div>
+          <div className="stat brut-sm bg-beer">
+            <span>Test revenue</span>
+            <strong>¥{revenue.toLocaleString()}</strong>
+          </div>
+        </div>
+
+        <div className="brut table-wrap">
+          {orders.length === 0 ? (
+            <p style={{ padding: '2rem' }} className="muted">
+              No orders yet. Place one from the shop to see it here.
+            </p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Beer</th>
+                  <th>Qty</th>
+                  <th>Amount</th>
+                  <th>Method</th>
+                  <th>Status</th>
+                  <th>Placed</th>
+                  <th>Email</th>
+                  <th>
+                    <span className="visually-hidden">Receipt</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id}>
+                    <td style={{ fontWeight: 800 }}>#{o.id}</td>
+                    <td>{o.products?.name ?? 'Unknown product'}</td>
+                    <td>{o.quantity}</td>
+                    <td style={{ fontWeight: 700 }}>¥{o.total_amount.toLocaleString()}</td>
+                    <td>{o.payment_method ?? 'not chosen'}</td>
+                    <td>
+                      <span className="chip" style={{ background: STATUS_BG[o.payment_status] ?? 'var(--sky)' }}>
+                        {o.payment_status}
+                      </span>
+                    </td>
+                    <td>{formatDate(o.created_at)}</td>
+                    <td>{o.customer_email ?? ''}</td>
+                    <td>
+                      <Link href={`/payment/success?orderId=${o.id}`}>Receipt</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
 }
 
-export const getServerSideProps: GetServerSideProps = async () => {
-    try {
-        // First try to get orders with products only
-        const { data: orders, error } = await getSupabaseAdmin()
-            .from('orders')
-            .select(`
-        *,
-        products (*)
-      `)
-            .order('created_at', { ascending: false })
-            .limit(50);
+export const getServerSideProps: GetServerSideProps<AdminOrdersProps> = async () => {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from('orders')
+      .select('id, quantity, total_amount, payment_status, payment_method, payment_completed_at, customer_email, created_at, products (name, price, image)')
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-        if (error) {
-            console.error('Error fetching orders:', error);
-            return {
-                props: {
-                    orders: []
-                }
-            };
-        }
-
-        // Try to add payment data if payments table exists
-        if (orders) {
-            for (let order of orders) {
-                try {
-                    const { data: payments } = await getSupabaseAdmin()
-                        .from('payments')
-                        .select('*')
-                        .eq('order_id', order.id);
-
-                    order.payments = payments || [];
-                } catch (paymentError) {
-                    // Payments table might not exist, set empty array
-                    order.payments = [];
-                }
-            }
-        }
-
-        return {
-            props: {
-                orders: orders || []
-            }
-        };
-    } catch (error) {
-        console.error('Server error:', error);
-        return {
-            props: {
-                orders: []
-            }
-        };
+    if (error) {
+      console.error('Error fetching orders:', error.message);
+      return { props: { orders: [], databaseError: true } };
     }
+    return { props: { orders: (data as unknown as AdminOrder[]) ?? [], databaseError: false } };
+  } catch (error: any) {
+    console.error('Admin orders failed:', error?.message);
+    return { props: { orders: [], databaseError: true } };
+  }
 };
