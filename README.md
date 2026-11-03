@@ -7,11 +7,11 @@ then download a PDF receipt. Orders are stored in Supabase.
 **This is a demo.** Payments run in test mode (Stripe test keys, PayPay sandbox) and nothing is shipped.
 A notice at the top of every page says so.
 
-Live demo: https://beerhub.rezkaihatsu.com
+Live demo: https://beerhub.rezxkaihatsu.com
 
 ## Tech
 
-Next.js 14 (pages router), Supabase, Stripe, PayPay. Same neo-brutalist design as rezkaihatsu.com.
+Next.js 14 (pages router), Supabase, Stripe, PayPay. Same neo-brutalist design as rezxkaihatsu.com.
 
 ## Run locally
 
@@ -21,18 +21,18 @@ cp .env.example .env.local   # then fill in your test keys
 npm run dev
 ```
 
-## Deploy on Vercel at beerhub.rezkaihatsu.com
+## Deploy on Vercel at beerhub.rezxkaihatsu.com
 
 1. **Database:** in Supabase, open SQL Editor and run `supabase/lock-down-demo.sql` once.
    This keeps products public but closes orders and payments to the public key.
 2. **Project:** in Vercel, Add New → Project → import this repository (framework: Next.js).
 3. **Environment variables:** add every variable from `.env.example` with real test values.
    Use Stripe **test** keys; live keys are refused while `NEXT_PUBLIC_DEMO_MODE` is `true`.
-4. **Domain:** Project → Settings → Domains → add `beerhub.rezkaihatsu.com`,
+4. **Domain:** Project → Settings → Domains → add `beerhub.rezxkaihatsu.com`,
    then add the CNAME record Vercel shows you at your DNS provider.
 5. **Webhooks:** point them at the new address:
-   - Stripe (test mode): `https://beerhub.rezkaihatsu.com/api/stripe-webhook`
-   - PayPay sandbox: `https://beerhub.rezkaihatsu.com/api/paypay-webhook`
+   - Stripe (test mode): `https://beerhub.rezxkaihatsu.com/api/stripe-webhook`
+   - PayPay sandbox: `https://beerhub.rezxkaihatsu.com/api/paypay-webhook`
 
 ## PayPay (sandbox)
 

@@ -1,4 +1,4 @@
-/** Four-point sparkle, the same decoration used on rezkaihatsu.com. */
+/** Four-point sparkle, the same decoration used on rezxkaihatsu.com. */
 export default function Sparkle({ fill = '#86efac', style }: { fill?: string; style?: React.CSSProperties }) {
   return (
     <svg viewBox="0 0 100 100" className="sparkle" style={style} aria-hidden="true">

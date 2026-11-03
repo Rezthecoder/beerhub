@@ -61,7 +61,7 @@ export default function Layout({ children, title = 'BeerHub - Japanese beer deli
           <span>BeerHub © {new Date().getFullYear()}. A portfolio demo, not a real shop.</span>
           <span>
             Built by{' '}
-            <a href="https://www.rezkaihatsu.com" target="_blank" rel="noopener noreferrer">
+            <a href="https://rezxkaihatsu.com" target="_blank" rel="noopener noreferrer">
               RezX Kaihatsu
             </a>
           </span>
