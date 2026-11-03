@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, getSupabaseAdmin } from './supabase';
 import { Database } from './database.types';
 
 export type Product = Database['public']['Tables']['products']['Row'];
@@ -40,7 +40,7 @@ export async function createOrder(orderData: {
   total_amount: number;
   customer_email?: string;
 }): Promise<Order | null> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseAdmin()
     .from('orders')
     .insert([{
       ...orderData,
@@ -82,7 +82,7 @@ export async function updateOrderPaymentStatus(
     updateData.payment_completed_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseAdmin()
     .from('orders')
     .update(updateData)
     .eq('id', orderId)
@@ -107,7 +107,7 @@ export async function createPaymentRecord(paymentData: {
   provider_response?: any;
 }): Promise<Payment | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseAdmin()
       .from('payments')
       .insert([{
         ...paymentData,
@@ -162,7 +162,7 @@ export async function updatePaymentRecord(
   }
 ): Promise<Payment | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseAdmin()
       .from('payments')
       .update({
         ...updateData,
@@ -185,7 +185,7 @@ export async function updatePaymentRecord(
 }
 
 export async function getOrderWithPayments(orderId: number): Promise<any> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseAdmin()
     .from('orders')
     .select(`
       *,
@@ -205,7 +205,7 @@ export async function getOrderWithPayments(orderId: number): Promise<any> {
 
 export async function getRecentOrders(limit: number = 10): Promise<any[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseAdmin()
       .from('orders')
       .select(`
         *,
@@ -229,7 +229,7 @@ export async function getRecentOrders(limit: number = 10): Promise<any[]> {
 
 export async function getLatestPayPayOrder(): Promise<any> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabaseAdmin()
       .from('orders')
       .select(`
         *,

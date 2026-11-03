@@ -61,6 +61,28 @@ export default function Layout({ children, title = 'BeerHub - Premium Japanese B
         />
       </Head>
 
+      {process.env.NEXT_PUBLIC_DEMO_MODE !== 'false' && (
+        <div
+          role="note"
+          style={{
+            background: '#111827',
+            color: '#FFD600',
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            textAlign: 'center',
+            padding: '8px 12px',
+            lineHeight: 1.5,
+          }}
+        >
+          Demo store by RezX Kaihatsu: payments are in test mode and nothing is shipped.{' '}
+          <span style={{ color: '#fff', fontWeight: 500 }}>
+            Test card 4242 4242 4242 4242, any future date, any CVC.
+          </span>
+          <br />
+          デモサイトです。決済はテストモードで、商品は発送されません。
+        </div>
+      )}
+
       <nav className="navbar navbar-expand-lg navbar-light w-100">
         <div className="container-fluid px-4">
           <Link href="/" className="navbar-brand d-flex align-items-center">

@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { updateOrderPaymentStatus, updatePaymentRecord, getOrderWithPayments, getLatestPayPayOrder } from '../../lib/products';
-import { supabase } from '../../lib/supabase';
+import { getSupabaseAdmin } from '../../lib/supabase';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {

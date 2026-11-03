@@ -1,7 +1,7 @@
 import { GetServerSideProps } from 'next';
 import Layout from '../../components/Layout';
 import ReceiptGenerator from '../../components/ReceiptGenerator';
-import { supabase } from '../../lib/supabase';
+import { getSupabaseAdmin } from '../../lib/supabase';
 
 interface OrderWithDetails {
     id: number;
@@ -207,7 +207,7 @@ export default function AdminOrders({ orders }: AdminOrdersProps) {
 export const getServerSideProps: GetServerSideProps = async () => {
     try {
         // First try to get orders with products only
-        const { data: orders, error } = await supabase
+        const { data: orders, error } = await getSupabaseAdmin()
             .from('orders')
             .select(`
         *,
@@ -229,7 +229,7 @@ export const getServerSideProps: GetServerSideProps = async () => {
         if (orders) {
             for (let order of orders) {
                 try {
-                    const { data: payments } = await supabase
+                    const { data: payments } = await getSupabaseAdmin()
                         .from('payments')
                         .select('*')
                         .eq('order_id', order.id);

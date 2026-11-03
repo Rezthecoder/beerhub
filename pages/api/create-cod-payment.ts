@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getProductById, createOrder, createPaymentRecord } from '../../lib/products';
-import { supabase } from '../../lib/supabase';
+import { getSupabaseAdmin } from '../../lib/supabase';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -36,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Update order with COD-specific information
-    const { error: updateError } = await supabase
+    const { error: updateError } = await getSupabaseAdmin()
       .from('orders')
       .update({
         payment_method: 'cod',
