@@ -1,9 +1,10 @@
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
+// Writes need the service role key: after supabase/lock-down-demo.sql the public (anon) key can only read.
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
 const beerProducts = [

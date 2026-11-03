@@ -1,5 +1,6 @@
 import { supabase, getSupabaseAdmin } from './supabase';
 import { Database } from './database.types';
+import { DEMO_PRODUCTS } from './demo-products';
 
 export type Product = Database['public']['Tables']['products']['Row'];
 export type Order = Database['public']['Tables']['orders']['Row'];
@@ -12,11 +13,11 @@ export async function getAllProducts(): Promise<Product[]> {
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error('Error fetching products:', error);
-    return [];
+    console.error('Error fetching products, showing the built-in demo catalogue:', error.message);
+    return DEMO_PRODUCTS;
   }
 
-  return data || [];
+  return data && data.length > 0 ? data : DEMO_PRODUCTS;
 }
 
 export async function getProductById(id: number): Promise<Product | null> {
@@ -24,11 +25,11 @@ export async function getProductById(id: number): Promise<Product | null> {
     .from('products')
     .select('*')
     .eq('id', id)
-    .single();
+    .maybeSingle();
 
-  if (error) {
-    console.error('Error fetching product:', error);
-    return null;
+  if (error || !data) {
+    if (error) console.error('Error fetching product, trying the built-in demo catalogue:', error.message);
+    return DEMO_PRODUCTS.find((product) => product.id === id) ?? null;
   }
 
   return data;
